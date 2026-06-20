@@ -1,0 +1,384 @@
+/* WebGL Menu Styles */
+
+#webgl-canvas {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  z-index: 0;
+  pointer-events: none;
+}
+
+#scroll-container {
+  position: relative;
+  z-index: 101;
+}
+
+section {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  padding: 0 5%;
+}
+
+#menu-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  z-index: 100;
+  background: transparent !important;
+  display: block;
+  overflow: hidden !important;
+  height: 100vh;
+}
+
+/* Custom scrollbar */
+#menu-layer::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
+
+.menu-container {
+  padding-left: 5%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  height: 100vh;
+  width: 100%;
+  transition: opacity 0.5s;
+}
+
+.menu-container.hidden {
+  display: none !important;
+}
+
+section h1 {
+  font-size: 3.5em;
+  margin-bottom: 40px;
+  letter-spacing: 5px;
+  color: #fff; /* TITLE IS WHITE */
+  margin-top: 0;
+}
+
+.menu-options, .sub-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.option {
+  font-size: 1.8em;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: fit-content;
+  color: #000; /* NON SELECTED IS BLACK */
+  text-transform: uppercase;
+}
+
+.option:hover {
+  color: #fff; /* HOVER IS WHITE */
+  padding-left: 20px;
+}
+
+.option.selected {
+  color: #fff; /* SELECTED IS WHITE */
+  padding-left: 20px;
+  border-left: 3px solid #fff;
+}
+
+.back-btn {
+  font-size: 1.2em;
+  color: #888;
+  cursor: pointer;
+  width: fit-content;
+}
+
+.back-btn:hover {
+  color: #fff;
+}
+
+#arcade-menu:not(.hidden) [data-action="back"],
+#settings-menu:not(.hidden) [data-action="back"],
+#vehicle-select-menu:not(.hidden) [data-action="back"],
+#car-setup-menu:not(.hidden) [data-action="back"] {
+  position: fixed;
+  bottom: 30px;
+  left: 30px;
+  z-index: 999;
+  font-size: 1.4em;
+}
+
+#arcade-menu:not(.hidden) [data-action="next"],
+#vehicle-select-menu:not(.hidden) [data-action="next"],
+#car-setup-menu:not(.hidden) [data-action="next"] {
+  position: fixed;
+  bottom: 30px;
+  right: 30px;
+  z-index: 999;
+  font-size: 1.6em;
+}
+
+.selection-group {
+  margin-top: 20px;
+  border-left: 2px solid #444;
+  padding-left: 20px;
+  transition: border-color 0.15s;
+}
+.selection-group.focused {
+  border-left-color: #0af;
+}
+
+.selection-label {
+  color: #888;
+  font-size: 0.9em;
+  margin-bottom: 5px;
+}
+
+.selection-value {
+  font-size: 1.2em;
+  margin-bottom: 15px;
+  color: #0ff;
+}
+
+.controls-info {
+  font-size: 0.8em;
+  line-height: 1.6;
+  color: #ccc;
+  margin-top: 10px;
+}
+
+/* ARCADE / VEHICLE SELECT LAYOUT */
+.arcade-left {
+  width: 45%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+}
+
+.arcade-right {
+  width: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  position: relative;
+  justify-content: center;
+  height: 90vh;
+  text-align: right;
+}
+
+/* SETTINGS & GUIDE STYLES */
+.settings-layout {
+  display: flex;
+  width: 95%;
+  height: 85vh;
+  gap: 40px;
+}
+
+.settings-nav {
+  width: 25%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-right: 1px solid rgba(0, 255, 255, 0.1);
+  padding-right: 20px;
+}
+
+.settings-content {
+  width: 70%;
+  padding-left: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.wiki-container {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  height: 70vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.wiki-tabs {
+  display: flex;
+  background: rgba(0, 255, 255, 0.05);
+  border-bottom: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+.wiki-tab {
+  padding: 15px 25px;
+  cursor: pointer;
+  font-size: 0.9em;
+  letter-spacing: 2px;
+  transition: all 0.2s;
+  border-right: 1px solid rgba(0, 255, 255, 0.1);
+}
+
+.wiki-tab:hover {
+  background: rgba(0, 255, 255, 0.1);
+}
+
+.wiki-tab.active {
+  background: #0af;
+  color: #000;
+  font-weight: bold;
+}
+
+.wiki-body {
+  padding: 30px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.wiki-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 20px;
+}
+
+.wiki-item {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 15px;
+  transition: border 0.2s;
+}
+
+.wiki-item:hover {
+  border-color: #0af;
+}
+
+.wiki-item h3 {
+  margin-top: 0;
+  color: #0af;
+  font-size: 1.1em;
+}
+
+.wiki-item p {
+  font-size: 0.8em;
+  color: #888;
+  text-transform: none;
+  line-height: 1.4;
+}
+
+.song-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 40vh;
+  overflow-y: auto;
+  margin-top: 15px;
+  padding-right: 10px;
+}
+
+.song-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
+  cursor: pointer;
+}
+
+.song-entry:hover {
+  background: rgba(0, 170, 255, 0.1);
+  border-color: rgba(0, 170, 255, 0.3);
+}
+
+.song-entry.active {
+  border-color: #0af;
+  background: rgba(0, 170, 255, 0.2);
+}
+
+.song-entry span {
+  font-size: 0.8em;
+  color: #aaa;
+}
+
+#preview-container {
+  width: 100%;
+  height: 50vh;
+  background: radial-gradient(circle, #111 0%, #000 100%);
+  position: relative;
+  overflow: hidden;
+}
+
+#preview-outer-border {
+  border: 1px solid rgba(0, 255, 255, 0.2);
+  padding: 8px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.car-selector-arrows {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 30px;
+  width: 100%;
+  margin-top: 15px;
+}
+
+.arrow-btn {
+  font-size: 3em;
+  cursor: pointer;
+  color: #0af;
+  transition: all 0.2s;
+  user-select: none;
+}
+
+.arrow-btn:hover {
+  color: #fff;
+  text-shadow: 0 0 10px #0af;
+  transform: scale(1.2);
+}
+
+#car-name-display {
+  font-size: 2em;
+  color: #fff;
+  letter-spacing: 3px;
+  min-width: 320px;
+  text-align: center;
+  font-weight: bold;
+}
+
+#character-art {
+  width: 100%;
+  height: 90vh;
+  background: url('../../art/buggs/draft.png') no-repeat center bottom;
+  background-size: contain;
+  opacity: 0.9;
+  filter: drop-shadow(0 0 20px rgba(0, 170, 255, 0.3));
+}
+
+/* SLIDERS & BUTTONS */
+.audio-ctrl-group {
+  margin-top: 20px;
+  border-left: 2px solid #f0f;
+  padding-left: 20px;
+}
+
+.audio-slider {
+  width: 100%;
+  margin: 10px 0;
+  cursor: pointer;
+}
+
+.song-btn {
+  background: #222;
+  color: #0af;
+  border: 1px solid #0af;
+  padding: 5px 15px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.8em;
+  margin-right: 5px;
+}
+
+.song-btn:hover {
+  background: #0af;
+  color: #000;
+}
