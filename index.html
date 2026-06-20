@@ -1,0 +1,1383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Road Knight - Arcade</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@700;900&display=swap" rel="stylesheet">
+    <style>
+        /* DYNAMIC SVG TITLE STYLES */
+        .title-container {
+            width: min(900px, 100%);
+            perspective: 1000px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-start;
+            position: relative;
+            overflow: visible;
+        }
+        .main-menu-layout {
+            width: 100%;
+            min-height: 60vh;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 40px;
+        }
+        .main-menu-copy {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+            justify-content: center;
+            align-self: center;
+            min-width: 260px;
+            z-index: 2;
+        }
+        .main-menu-title {
+            align-self: flex-start;
+            margin-top: -10px;
+            margin-left: auto;
+            justify-content: flex-end;
+            flex: 1 1 auto;
+            max-width: 920px;
+        }
+        .dynamic-title {
+            width: 100%;
+            height: auto;
+            position: relative;
+            z-index: 2;
+            filter: drop-shadow(0 0 15px rgba(0, 170, 255, 0.5));
+            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .title-container:hover .dynamic-title {
+            transform: scale(1.05) rotateX(5deg);
+        }
+        .title-text {
+            font-family: 'Cinzel Decorative', serif;
+            font-weight: 900;
+            font-size: 72px;
+            fill: #fff;
+            letter-spacing: 6px;
+            text-transform: uppercase;
+        }
+        
+        /* SUN ANIMATION */
+        .sun-rays {
+            transform-origin: 80px 75px;
+            animation: sun-rotate 10s linear infinite;
+        }
+        @keyframes sun-rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .fire-pulse {
+            animation: fire-flicker 0.2s infinite alternate;
+        }
+        @keyframes fire-flicker {
+            from { opacity: 0.8; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1.02); }
+        }
+
+        /* MOON ANIMATION */
+        .moon-drip {
+            animation: ice-drip 3s infinite ease-in;
+        }
+        @keyframes ice-drip {
+            0% { transform: translateY(0) scaleY(1); opacity: 0; }
+            30% { opacity: 1; }
+            100% { transform: translateY(40px) scaleY(1.5); opacity: 0; }
+        }
+
+        /* MENU FLIP ANIMATION */
+        .menu-flip-out {
+            animation: menu-ripped-flip 0.8s forwards cubic-bezier(0.6, -0.28, 0.735, 0.045);
+            pointer-events: none;
+            transform-origin: left center;
+        }
+        @keyframes menu-ripped-flip {
+            0% { transform: perspective(1500px) rotateY(0deg) rotateZ(0deg); opacity: 1; }
+            40% { transform: perspective(1500px) rotateY(-30deg) rotateZ(-2deg); opacity: 1; }
+            100% { transform: perspective(1500px) rotateY(-110deg) rotateZ(-10deg) translateX(-150%); opacity: 0; }
+        }
+
+        body { 
+            margin: 0; 
+            padding: 0; 
+            background: #000; 
+            color: #0af; 
+            font-family: 'Courier New', Courier, monospace;
+            text-transform: uppercase;
+            overflow: hidden;
+            height: 100vh;
+            --letterbox-bar-height: clamp(64px, 12vh, 148px);
+        }
+
+        /* GAME STYLES */
+        canvas { display: block; }
+        #game-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: none; }
+        #audio-stats-overlay { 
+            position: absolute; top: 110px; left: 35px; 
+            background: rgba(0,0,0,0.7); color: #0ff; 
+            font-size: 0.7em; padding: 10px; border: 1px solid #0ff; 
+            pointer-events: none; z-index: 20; display: none;
+            max-width: 300px; line-height: 1.4;
+            font-family: monospace;
+        }
+        #eq-viz-container { position: absolute; top: 35px; left: 35px; z-index: 10; pointer-events: none; display: none; flex-direction: row; gap: 10px; }
+        #ui { position: absolute; top: 5px; right: 5px; color: #0f0; font-size: 0.6em; opacity: 0.5; z-index: 10; pointer-events: none; }
+        #match-ui-right { position: absolute; bottom: 35px; right: 35px; width: 250px; padding: 0; color: #fff; text-align: right; z-index: 10; text-shadow: 2px 2px 4px rgba(0,0,0,1); pointer-events: none; }
+        #speed-val { font-size: 3em; font-weight: bold; color: #0af; }
+        #boost-container { width: 100%; height: 10px; background: #111; margin-top: 5px; border: none; }
+        #boost-bar { height: 100%; width: 100%; background: linear-gradient(to right, #008888, #00ffff); transition: width 0.1s; }
+        #rpm-container { width: calc(100% + 1px); height: 10px; background: #222; margin-top: 5px; position: relative; border: none; margin-right: -1px; }
+        #rpm-bar { height: 100%; width: 0%; background: linear-gradient(to right, #0f0, #ff0, #f00); transition: width 0.1s; }
+        #gear-val { font-size: 2.5em; color: #f0f; font-weight: bold; margin-left: 15px; }
+        #match-ui-left { position: absolute; bottom: 35px; left: 35px; width: 250px; z-index: 10; pointer-events: none; }
+        #energy-bar-container { width: 100%; height: 10px; background: rgba(0,255,255,0.1); border: none; margin-bottom: 5px; }
+        #energy-bar { width: 100%; height: 100%; background: #0ff; transition: width 0.2s; }
+        #health-bar-container { width: 100%; height: 10px; background: rgba(255,0,0,0.2); border: none; }
+        #health-bar { width: 100%; height: 100%; background: #f00; transition: width 0.3s; }
+        
+        #active-weapon-ui {
+            position: absolute; bottom: 120px; left: 35px;
+            display: flex; flex-direction: column; gap: 5px;
+            z-index: 10; pointer-events: none;
+            background: rgba(0,0,0,0.5); padding: 10px; border-left: 3px solid #0af;
+        }
+        #wep-name { font-size: 1.2em; font-weight: bold; color: #0af; }
+        #wep-ammo { font-size: 1.5em; color: #fff; }
+        #wep-hint { font-size: 0.7em; color: #555; }
+
+        #error-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255, 0, 0, 0.8); color: white; padding: 20px; display: none; max-width: 80%; word-wrap: break-word; z-index: 101; }
+
+        /* INTRO STYLES */
+        #intro-layer {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: #000;
+            z-index: 5000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: opacity 1.5s ease-in-out;
+        }
+        #intro-video {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+        }
+        #menu-letterbox {
+            position: fixed;
+            inset: 0;
+            z-index: 250;
+            pointer-events: none;
+            opacity: 1;
+            transition: opacity 1s ease;
+        }
+        .letterbox-bar {
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: var(--letterbox-bar-height-fixed, var(--letterbox-bar-height));
+            background: #000;
+            will-change: transform, opacity;
+            transition: transform 0.9s cubic-bezier(0.22, 1, 0.36, 1), opacity 1s ease;
+        }
+        .letterbox-bar.top {
+            top: 0;
+            box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+        }
+        .letterbox-bar.bottom {
+            bottom: 0;
+            box-shadow: 0 -16px 40px rgba(0, 0, 0, 0.45);
+        }
+        #menu-letterbox.exiting .letterbox-bar.top {
+            transform: translateY(-100%);
+        }
+        #menu-letterbox.exiting .letterbox-bar.bottom {
+            transform: translateY(100%);
+        }
+        #menu-letterbox.fading {
+            opacity: 0;
+        }
+
+        /* ARCADE SPECIFIC UI */
+        #hover-status { color: #0ff; font-size: 0.9em; margin-top: 5px; text-shadow: 1px 1px 2px #000; }
+        #bps-val { font-size: 0.8em; color: #ff0; opacity: 0.4; }
+        #death-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.2); backdrop-filter: grayscale(100%); display: none; z-index: 100; pointer-events: none; justify-content: center; align-items: center; color: white; font-family: monospace; font-size: 32px; font-weight: bold; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        
+        #pause-menu { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            background: rgba(0, 0, 0, 0.95); display: none; 
+            flex-direction: row; justify-content: center; align-items: center; 
+            z-index: 1000; color: white; padding: 50px; box-sizing: border-box;
+            text-align: center;
+            gap: 40px;
+            overflow: hidden;
+        }
+        .pause-nav {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+            width: 100%;
+            max-width: 420px;
+            pointer-events: auto;
+        }
+        .pause-panel-container {
+            position: absolute;
+            inset: 0;
+            z-index: 5;
+            display: none;
+            justify-content: center;
+            align-items: center;
+            padding: 50px;
+            box-sizing: border-box;
+            background: rgba(0, 0, 0, 0.38);
+            backdrop-filter: blur(8px);
+        }
+        .pause-panel { display: none; width: min(1100px, calc(100vw - 120px)); max-height: calc(100vh - 120px); overflow-y: auto; text-align: left; background: rgba(8,12,18,0.92); padding: 30px; border: 1px solid rgba(0,170,255,0.28); box-shadow: 0 24px 80px rgba(0,0,0,0.55); pointer-events: auto; }
+        .pause-copy {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 2;
+            pointer-events: none;
+        }
+        .pause-title-stage {
+            position: absolute;
+            right: 10px;
+            bottom: 10px;
+            display: flex;
+            justify-content: flex-end;
+            align-items: flex-end;
+            z-index: 1;
+            pointer-events: none;
+        }
+        .pause-title {
+            align-self: flex-end;
+            max-width: 540px;
+            width: 100%;
+            justify-content: flex-end;
+            margin-bottom: 0;
+        }
+        .pause-panel-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 16px 0 22px;
+        }
+        .pause-tab {
+            background: rgba(255,255,255,0.04);
+            border: 1px solid rgba(0,170,255,0.24);
+            color: #8fd8ff;
+            padding: 10px 16px;
+            cursor: pointer;
+            font-family: inherit;
+            letter-spacing: 1px;
+        }
+        .pause-tab.active {
+            background: rgba(0,170,255,0.2);
+            color: #fff;
+            border-color: #0af;
+        }
+        .control-layout-panel {
+            display: none;
+        }
+        .control-layout-panel.active {
+            display: block;
+        }
+        .pause-control-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(240px, 1fr));
+            gap: 14px 24px;
+            margin-top: 10px;
+        }
+        .pause-control-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid rgba(255,255,255,0.08);
+            padding: 14px 16px;
+        }
+        .pause-control-card b {
+            color: #0af;
+        }
+        .menu-item { font-size: 2em; cursor: pointer; padding: 10px 30px; transition: all 0.2s; width: 100%; box-sizing: border-box; }
+        .menu-item:hover { color: #0af; background: rgba(0,170,255,0.1); border-bottom: 2px solid #0af; }
+        .menu-item.selected { color: #0af; background: rgba(0,170,255,0.1); border-bottom: 2px solid #0af; }
+        
+        .hint { font-size: 0.7em; color: #555; margin-top: 5px; text-transform: none; }
+        #menu-music-toast {
+            position: fixed;
+            right: 24px;
+            bottom: 24px;
+            z-index: 1200;
+            min-width: 280px;
+            max-width: 420px;
+            padding: 14px 18px;
+            background: rgba(6, 10, 18, 0.9);
+            border-left: 3px solid #0af;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+            transform: translateX(calc(100% + 32px));
+            opacity: 0;
+            transition: transform 0.45s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease;
+            pointer-events: none;
+        }
+        #menu-music-toast.visible {
+            transform: translateX(0);
+            opacity: 1;
+        }
+        #menu-music-toast .kicker {
+            color: #6ebee8;
+            font-size: 0.72em;
+            letter-spacing: 2px;
+            margin-bottom: 6px;
+        }
+        #menu-music-toast .title {
+            color: #fff;
+            font-size: 1em;
+            line-height: 1.35;
+            text-transform: none;
+        }
+
+        /* LOADING OVERLAY (SCOPED TO PREVIEW) */
+        #loading-overlay {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: #0af;
+            font-family: 'Courier New', Courier, monospace;
+            border-radius: 4px;
+        }
+        #loading-text {
+            font-size: 0.9em;
+            letter-spacing: 2px;
+            text-align: center;
+            padding: 0 10px;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 0.4; }
+            50% { opacity: 1; }
+            100% { opacity: 0.4; }
+        }
+        /* MULTIPLAYER MENU */
+        #multiplayer-menu {
+            position: fixed; inset: 0; z-index: 300;
+            background: linear-gradient(180deg, #FF6B35 0%, #e0555a 25%, #a0437a 50%, #5a2c8a 75%, #2D1B69 100%);
+            display: none;
+            flex-direction: column;
+            pointer-events: auto;
+        }
+        #multiplayer-menu:not(.hidden) { display: flex; }
+        .mp-top-bar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 24px;
+            background: rgba(0,0,0,0.35);
+            backdrop-filter: blur(6px);
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+            flex-shrink: 0;
+            z-index: 2;
+        }
+        .mp-top-left { display: flex; align-items: center; gap: 12px; }
+        .mp-logo { font-size: 1.1em; color: #fff; letter-spacing: 2px; cursor: pointer; opacity: 0.8; }
+        .mp-logo:hover { opacity: 1; }
+        .mp-top-right { display: flex; align-items: center; gap: 12px; }
+        .mp-car-icon {
+            width: 34px; height: 34px; border-radius: 4px;
+            background: rgba(255,255,255,0.08);
+            border: 1px solid rgba(255,255,255,0.15);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; color: #fff; font-size: 1.1em;
+            transition: background 0.15s;
+            flex-shrink: 0;
+        }
+        .mp-car-icon:hover { background: rgba(255,255,255,0.18); }
+        .mp-profile-icon {
+            width: 36px; height: 36px; border-radius: 4px;
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.25);
+            overflow: hidden;
+            flex-shrink: 0;
+            cursor: pointer;
+            transition: background 0.15s;
+            display: flex; align-items: center; justify-content: center;
+            color: rgba(255,255,255,0.5);
+            font-size: 1em;
+        }
+        .mp-profile-icon:hover { background: rgba(255,255,255,0.2); }
+        .mp-level {
+            background: rgba(0,0,0,0.4); padding: 2px 8px;
+            border-radius: 3px; font-size: 0.75em; color: #ffd700;
+        }
+        .mp-name { font-size: 0.95em; color: #fff; letter-spacing: 1px; }
+        .mp-server-select {
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: rgba(255,255,255,0.7);
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 0.75em;
+            font-family: inherit;
+            cursor: pointer;
+            outline: none;
+            min-width: 200px;
+        }
+        .mp-server-select option { background: #222; color: #fff; }
+        .mp-server-select option.opt-divider { border-top: 1px solid #555; }
+        .mp-server-select option.opt-header { color: #0af; font-weight: bold; background: #111; }
+        .mp-server-select option.opt-room { color: #0f0; }
+        .mp-lobby-overlay {
+            position: absolute; inset: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 100;
+            opacity: 0; pointer-events: none;
+            transition: opacity 0.3s;
+        }
+        .mp-lobby-overlay.visible { opacity: 1; pointer-events: auto; }
+        .mp-lobby-panel {
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a0a2e 100%);
+            border: 1px solid rgba(0,255,255,0.3);
+            border-radius: 12px;
+            padding: 30px;
+            width: 460px;
+            max-width: 90%;
+            box-shadow: 0 0 60px rgba(0,255,255,0.15);
+        }
+        .mp-lobby-panel h2 { margin: 0 0 20px; color: #0ff; text-align: center; letter-spacing: 3px; }
+        .mp-lobby-player {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 15px; margin: 6px 0;
+            background: rgba(255,255,255,0.04);
+            border-radius: 6px;
+            border-left: 3px solid rgba(0,255,255,0.3);
+        }
+        .mp-lobby-player.you { border-left-color: #0f0; }
+        .mp-lobby-player .name { color: #fff; font-weight: bold; }
+        .mp-lobby-player .status { font-size: 0.75em; color: #888; }
+        .mp-lobby-player .status.ready { color: #0f0; }
+        .mp-lobby-actions { display: flex; gap: 12px; margin-top: 24px; justify-content: center; flex-wrap: wrap; }
+        .mp-lobby-actions button {
+            padding: 10px 24px; border: none; border-radius: 6px;
+            font-size: 1em; font-family: inherit; cursor: pointer;
+            transition: all 0.15s;
+        }
+        .mp-lobby-ready-btn { background: #0a0; color: #fff; }
+        .mp-lobby-ready-btn:hover { background: #0c0; }
+        .mp-lobby-ready-btn.is-ready { background: #ff8800; }
+        .mp-lobby-ready-btn.is-ready:hover { background: #ffaa00; }
+        .mp-lobby-start-btn { background: #00aaff; color: #fff; }
+        .mp-lobby-start-btn:hover { background: #44ccff; }
+        .mp-lobby-start-btn:disabled { opacity: 0.4; cursor: default; }
+        .mp-lobby-leave-btn { background: rgba(255,255,255,0.1); color: #f44; }
+        .mp-lobby-leave-btn:hover { background: rgba(255,68,68,0.2); }
+        .mp-net-status {
+            font-size: 0.65em; letter-spacing: 1px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .mp-net-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .mp-net-dot.online { background: #0f0; box-shadow: 0 0 6px #0f0; }
+        .mp-net-dot.offline { background: #f44; box-shadow: 0 0 6px #f44; }
+        .mp-net-dot.connecting { background: #ff0; box-shadow: 0 0 6px #ff0; animation: pulse-dot 0.6s infinite alternate; }
+        @keyframes pulse-dot { from { opacity: 0.4; } to { opacity: 1; } }
+        .mp-back-btn {
+            font-size: 1.4em; color: rgba(255,255,255,0.6);
+            cursor: pointer; line-height: 1; padding: 4px 10px;
+            transition: color 0.15s;
+        }
+        .mp-back-btn:hover { color: #fff; }
+
+        /* STATS OVERLAY */
+        .mp-stats-overlay {
+            position: fixed; inset: 0; z-index: 400;
+            background: rgba(0,0,0,0.6);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+        }
+        .mp-stats-overlay.visible { display: flex; }
+        .mp-stats-panel {
+            background: rgba(10,15,25,0.95);
+            border: 1px solid rgba(255,255,255,0.08);
+            border-radius: 8px;
+            padding: 30px;
+            min-width: 320px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+            color: #fff;
+        }
+        .mp-stats-panel h2 {
+            margin: 0 0 20px 0;
+            font-size: 1.2em;
+            color: #ffd700;
+            letter-spacing: 2px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            padding-bottom: 12px;
+        }
+        .mp-stat-row {
+            display: flex; justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            font-size: 0.85em;
+        }
+        .mp-stat-label { color: rgba(255,255,255,0.5); }
+        .mp-stat-value { color: #0af; }
+        .mp-stats-close {
+            margin-top: 20px; padding: 10px;
+            text-align: center;
+            background: rgba(255,255,255,0.06);
+            border-radius: 4px;
+            cursor: pointer;
+            color: rgba(255,255,255,0.5);
+            font-size: 0.85em;
+            transition: background 0.15s;
+        }
+        .mp-stats-close:hover { background: rgba(255,255,255,0.12); color: #fff; }
+
+        .mp-center {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        #mp-car-container {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        #mp-car-container:active { cursor: grabbing; }
+
+        .mp-bottom-bar {
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 20px;
+            padding: 12px 24px;
+            background: rgba(0,0,0,0.35);
+            backdrop-filter: blur(6px);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            flex-shrink: 0;
+            z-index: 2;
+        }
+        .mp-icon-btn {
+            width: 36px; height: 36px;
+            display: flex; align-items: center; justify-content: center;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.06);
+            border: 1px solid rgba(255,255,255,0.12);
+            cursor: pointer;
+            color: rgba(255,255,255,0.6);
+            font-size: 1.1em;
+            transition: all 0.15s;
+        }
+        .mp-icon-btn:hover {
+            background: rgba(255,255,255,0.15);
+            color: #fff;
+        }
+        .mp-bottom-left { margin-right: auto; display: flex; gap: 20px; align-items: center; }
+        .mp-version { font-size: 0.65em; color: rgba(255,255,255,0.25); letter-spacing: 1px; }
+
+        @media (max-width: 1100px) {
+            .main-menu-layout,
+            #pause-menu {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+            .main-menu-title,
+            .pause-title {
+                margin-left: 0;
+                max-width: 100%;
+                justify-content: flex-start;
+            }
+            .pause-title-stage {
+                width: 100%;
+                justify-content: flex-start;
+            }
+            .pause-copy,
+            .pause-panel-container {
+                max-width: 100%;
+            }
+            .pause-panel { width: min(100%, calc(100vw - 40px)); max-height: calc(100vh - 40px); }
+            .pause-title-stage { right: 0; bottom: 0; }
+            .pause-title { max-width: 460px; }
+            .pause-control-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+    <link rel="stylesheet" href="objects/menu/menu.css">
+    <link rel="stylesheet" href="objects/menu/blackhole_sun.css">
+</head>
+<body>
+    <div id="intro-layer" class="zoom-static-bg">
+        <video id="intro-video" autoplay muted playsinline>
+            <source src="sound/endeverlogointro.mp4" type="video/mp4">
+        </video>
+        <div id="unmute-btn" style="position: absolute; top: 40px; right: 40px; color: #0af; font-family: 'Courier New', Courier, monospace; font-size: 18px; letter-spacing: 2px; border: 2px solid #0af; padding: 10px 20px; text-transform: uppercase; cursor: pointer; z-index: 5010; background: rgba(0,0,0,0.5);">UNMUTE AUDIO</div>
+        <div id="skip-hint" style="position: absolute; bottom: 40px; right: 40px; color: rgba(255,255,255,0.7); font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; font-size: 16px; font-weight: bold; display: none; text-shadow: 0 0 10px #000, 2px 2px 5px #000; letter-spacing: 2px; z-index: 5001; pointer-events: none;">PRESS SPACE TO SKIP</div>
+    </div>    <canvas id="webgl-canvas" class="zoom-static-bg"></canvas>
+    <div id="menu-letterbox" aria-hidden="true">
+        <div class="letterbox-bar top"></div>
+        <div class="letterbox-bar bottom"></div>
+    </div>
+    <div id="build-version" style="position: absolute; top: 5px; left: 5px; font-size: 0.7em; color: #555; z-index: 1000; pointer-events: none; text-transform: none;">Arcade Integration Build V5.8</div>
+    <div id="menu-music-toast" aria-live="polite">
+        <div class="kicker">NOW PLAYING</div>
+        <div class="title">TRACK</div>
+    </div>
+
+    <!-- MENU LAYER -->
+    <div id="menu-layer" style="opacity: 0; transition: opacity 1.5s ease-in-out;">
+        <div id="scroll-container">
+            <!-- POINT 1: MAIN MENU -->
+            <section id="s0">
+                <div class="menu-container active-menu" id="main-menu" style="position: relative; transform-origin: left center;">
+                    <div class="main-menu-layout">
+                        <div class="main-menu-copy">
+                            <div class="menu-options">
+                                <div class="option" onclick="showSubMenu('arcade-menu')">START ARCADE</div>
+                                <div class="option" onclick="showSubMenu('multiplayer-menu')">MULTIPLAYER</div>
+                                <div class="option" onclick="window._settingsFrom=null; showSubMenu('settings-menu')">SETTINGS</div>
+                            </div>
+                        </div>
+                        <div class="title-container main-menu-title">
+                            <div class="blackhole-sun-container">
+                                <div class="sun-effect">
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                                    <div class="sun_border"></div>
+                                </div>
+                                <div class="cover"></div>
+                            </div>
+                            <svg class="dynamic-title" viewBox="0 0 1000 200">
+                                <text x="500" y="125" text-anchor="middle" class="title-text">DAY OR NIGHT</text>
+                                <g class="moon-group" transform="translate(800, 20)">
+                                    <path d="M50 20 A60 60 0 1 0 110 140 A45 45 0 1 1 50 20" fill="#00ffff" filter="url(#glow-main)" />
+                                </g>
+                                <defs>
+                                    <filter id="glow-main">
+                                        <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+                                        <feMerge>
+                                            <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+                                        </feMerge>
+                                    </filter>
+                                </defs>
+                            </svg>
+                        </div>
+                    </div>
+                    
+                    <!-- BRANDING LINKS (MAIN MENU ONLY) -->
+                    <div id="branding-links" style="position: absolute; bottom: calc(var(--letterbox-bar-height) + 20px); right: 20px; z-index: 260; display: flex; gap: 15px; align-items: center; pointer-events: auto;">
+                        <a href="https://www.Neverendever.com" target="_blank" style="display: block;">
+                            <img src="art/1 logos/endevergameslogo.png" style="height: 40px; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5));">
+                        </a>
+                        <a href="https://www.youtube.com/@NEVRAMV/videos" target="_blank" style="display: block;">
+                            <img src="https://upload.wikimedia.org/wikipedia/commons/0/09/YouTube_full-color_icon_%282017%29.svg" style="height: 30px; filter: drop-shadow(0 0 5px rgba(0,0,0,0.5));">
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- POINT 2: SUB-MENU HUB -->
+            <section id="s1">
+                <div class="menu-container hidden" id="arcade-menu">
+                    <h1>ARCADE</h1>
+                    <div class="menu-options">
+                        <div class="selection-group">
+                            <div class="selection-label">SELECT MAP:</div>
+                            <div class="car-selector-arrows" style="margin-top: 10px; width: 100%; justify-content: center;">
+                                <div class="arrow-btn" onclick="prevMapIndex()">&lt;</div>
+                                <div id="map-name-display" style="min-width: 400px; text-align: center;">BALL PROVING GROUNDS</div>
+                                <div class="arrow-btn" onclick="nextMapIndex()">&gt;</div>
+                            </div>
+                        </div>
+                        <div class="option" onclick="showSubMenu('vehicle-select-menu')" style="margin-top: 20px; color: #0f0; font-size: 1.8em;">NEXT &gt;</div>
+                        <div class="back-btn" onclick="showSubMenu('main-menu')">&lt; BACK</div>
+                    </div>
+                </div>
+                <div class="menu-container hidden" id="settings-menu">
+                    <div class="settings-layout">
+                        <div class="settings-nav">
+                            <h1>SETTINGS</h1>
+                            <div class="option" onclick="openSettingsTab('controls')">CONTROLS</div>
+                            <div class="option" onclick="openSettingsTab('audio')">AUDIO</div>
+                            <div class="back-btn" onclick="settingsBack()">&lt; BACK</div>
+                        </div>
+                        <div class="settings-content">
+                            <!-- CONTROLS PANEL -->
+                            <div id="settings-controls" class="settings-panel">
+                                <h2 style="color: #f0f;">CONTROLS</h2>
+                                <div class="controls-info" style="font-size: 1.1em;">
+                                    <b style="color: #f0f;">DRIVING:</b> WASD / ARROWS<br>
+                                    <b style="color: #f0f;">BRAKE:</b> SPACE<br>
+                                    <b style="color: #f0f;">DRIFT:</b> SHIFT<br>
+                                    <b style="color: #0af;">BOOST:</b> B<br>
+                                    <b style="color: #0af;">HOVER:</b> H<br>
+                                    <b style="color: #f0f;">FIRE:</b> MOUSE / F<br>
+                                    <b style="color: #f0f;">JUMP:</b> J<br>
+                                    <b style="color: #f0f;">GEARS:</b> [ / ]<br>
+                                    <b style="color: #f0f;">PAUSE:</b> ESC
+                                </div>
+                            </div>
+
+                            <!-- AUDIO PANEL -->
+                            <div id="settings-audio" class="settings-panel hidden">
+                                <h2 style="color: #0af;">AUDIO</h2>
+                                <div class="audio-ctrl-group" style="margin-top: 20px; border-left: 2px solid #0af; padding-left: 20px;">
+                                    <div class="selection-label">MASTER VOLUME:</div>
+                                    <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="master" style="width: 100%; margin: 10px 0; cursor: pointer;">
+                                    
+                                    <div style="margin: 20px 0; padding: 15px; background: rgba(0,170,255,0.05); border: 1px solid rgba(0,170,255,0.2);">
+                                        <h3 style="margin-top:0; color: #0ff;">RADIO & CUSTOM MUSIC</h3>
+                                        
+                                        <div class="selection-label">RADIO URL (MP3/Stream):</div>
+                                        <div style="display: flex; gap: 10px; margin: 10px 0;">
+                                            <input type="text" id="radio-url-input" placeholder="http://..." style="flex: 1; background: #111; color: #fff; border: 1px solid #0af; padding: 8px;">
+                                            <button class="option" style="font-size: 0.8em; padding: 5px 15px;" onclick="saveRadioStation()">SAVE</button>
+                                        </div>
+                                        
+                                        <div id="saved-stations" style="display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 15px;"></div>
+                                        
+                                        <div class="selection-label">CUSTOM PLAYLIST (JSON/MD):</div>
+                                        <input type="file" id="playlist-upload" accept=".json,.md" style="margin: 10px 0; color: #0af;" onchange="handlePlaylistUpload(event)">
+                                        
+                                        <div class="selection-label">MUSIC SOURCE:</div>
+                                        <select class="song-btn" style="width: 100%;" onchange="setMusicSource(this.value)" id="music-source-select">
+                                            <option value="game">GAME MUSIC</option>
+                                            <option value="radio">EXTERNAL RADIO</option>
+                                            <option value="custom">CUSTOM PLAYLIST</option>
+                                        </select>
+                                        <div class="hint" style="color: #7aa2b5;">Hotkeys: [R] Next Station/Track | [U] Toggle Radio Mode</div>
+                                    </div>
+
+                                    <div class="selection-label">MENU MUSIC:</div>
+                                    <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="menuMusic" style="width: 100%; margin: 10px 0; cursor: pointer;">
+                                    <div class="selection-label">MUSIC VOLUME:</div>
+                                    <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="music" style="width: 100%; margin: 10px 0; cursor: pointer;">
+                                    <div class="selection-label">SOUND FX VOLUME:</div>
+                                    <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="sfx" style="width: 100%; margin: 10px 0; cursor: pointer;">
+                                    <div class="hint" style="color:#7aa2b5; margin: 8px 0 14px;">Master scales the full mix. External sources also run through SoundDrive.</div>
+                                    <label style="font-size: 0.9em; margin-top: 10px; color: #0af; display: block; cursor: pointer;"><input type="checkbox" data-audio-setting="driveEnabled"> SoundDrive (Dynamic EQ)</label>
+                                    <div class="selection-label" style="margin-top: 10px;">DRIVE STRENGTH:</div>
+                                    <select class="song-btn" style="width: 100%; text-align: left; background: #222; color: #0af; border: 1px solid #0af; padding: 5px 15px; cursor: pointer; font-family: inherit;" id="drive-strength-main" data-audio-setting="driveStrength">
+                                        <option value="max" selected>MAX (AGGRESSIVE)</option>
+                                        <option value="soft">SOFT (BALANCED)</option>
+                                        <option value="subtle">SUBTLE (GHOST)</option>
+                                    </select>
+                                    <label style="font-size: 0.9em; margin-top: 15px; color: #0af; display: block; cursor: pointer;"><input type="checkbox" data-audio-setting="viz"> SHOW AUDIO DASHBOARD</label>
+                                    <div class="selection-label" style="margin-top: 20px;">NOW PLAYING:</div>
+                                    <div id="current-song-name" class="selection-value" data-current-track style="color: #fff;">TRACK 1</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- POINT 3: SELECT VEHICLE -->
+            <section id="s2">
+                <div class="menu-container hidden" id="vehicle-select-menu" style="flex-direction: row; width: 95%; gap: 30px;">
+                    <div class="arcade-left">
+                        <div id="character-art"></div>
+                        <div class="driver-selector-arrows" style="display: flex; justify-content: center; align-items: center; gap: 20px; margin-top: -120px; z-index: 300; position: relative; pointer-events: auto;">
+                            <div id="driver-name-display" style="font-size: 1.5em; min-width: 250px; text-align: center; color: #0f0; font-weight: bold; text-shadow: 2px 2px 4px #000; letter-spacing: 2px;">DRIVER</div>
+                        </div>
+                    </div>
+                    <div class="arcade-right">
+                        <h1>SELECT VEHICLE</h1>
+                        <div id="preview-outer-border">
+                            <div id="preview-container">
+                                <div id="loading-overlay">
+                                    <div id="loading-text">LOADING...</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="car-selector-arrows">
+                            <div class="arrow-btn" onclick="prevCarIndex()">&lt;</div>
+                            <div id="car-name-display">VEHICLE</div>
+                            <div class="arrow-btn" onclick="nextCarIndex()">&gt;</div>
+                        </div>
+                        <div id="car-info-panel">
+                            <div id="car-description">ARCADE PROTOTYPE</div>
+                            <div id="car-ult-desc" style="font-size: 0.7em; color: #ff0; margin-top: 8px; min-height: 18px;">ULT: UNIQUE VEHICLE ABILITY</div>
+                            <div id="car-stats" style="margin-top: 4px;">TUNING SYSTEMS ACTIVE</div>
+                        </div>
+                        <div style="display: flex; gap: 30px; margin-top: 20px;">
+                            <div class="back-btn" onclick="mpCarSelectBack()" style="margin-top: 0; font-size: 1.8em;">&lt; BACK</div>
+                            <div class="option" onclick="showSubMenu('car-setup-menu')" style="font-size: 2.2em; color: #0f0;">NEXT &gt;</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- POINT 4: CAR SETUP -->
+            <section id="s3">
+                <div class="menu-container hidden" id="car-setup-menu">
+                    <h1>CAR SETUP</h1>
+                    <div class="menu-options">
+                        <div class="selection-group">
+                            <div class="selection-label">AI DIFFICULTY:</div>
+                            <select class="song-btn" style="width: 300px; text-align: left;" onchange="window.aiDifficulty = this.value">
+                                <option value="none">OFF</option>
+                                <option value="easy">EASY</option>
+                                <option value="medium" selected>MEDIUM</option>
+                                <option value="hard">HARD</option>
+                            </select>
+                        </div>
+                        <div class="selection-group">
+                            <div class="selection-label">AI COUNT:</div>
+                            <div style="display: flex; align-items: center; gap: 10px;">
+                                <button class="arrow-btn" onclick="window.aiCount = Math.max(0, (parseInt(window.aiCount)||0) - 1); document.getElementById('ai-count-display').innerText = window.aiCount;" style="font-size: 1.2em;">-</button>
+                                <span id="ai-count-display" style="font-size: 1.8em; color: #0af; min-width: 40px; text-align: center;">3</span>
+                                <button class="arrow-btn" onclick="window.aiCount = Math.min(10, (parseInt(window.aiCount)||0) + 1); document.getElementById('ai-count-display').innerText = window.aiCount;" style="font-size: 1.2em;">+</button>
+                            </div>
+                        </div>
+                        <div style="display: flex; gap: 30px; margin-top: 40px;">
+                            <div class="back-btn" onclick="showSubMenu('vehicle-select-menu')" style="margin-top: 0; font-size: 1.8em;">&lt; BACK</div>
+                            <div class="option" onclick="startArcade()" style="font-size: 2.2em; color: #0f0;">START MATCH &gt;</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- POINT 5: MULTIPLAYER -->
+            <section id="s4"></section>
+        </div>
+
+        <div class="menu-container hidden" id="multiplayer-menu">
+            <div class="mp-top-bar">
+                <div class="mp-top-left">
+                    <div class="mp-back-btn" onclick="showSubMenu('main-menu')">&larr;</div>
+                    <div class="mp-car-icon" onclick="window._mpCarSelect=true; showSubMenu('vehicle-select-menu')" title="SELECT VEHICLE">&#128663;</div>
+                    <div class="mp-logo" onclick="window._settingsFrom='multiplayer-menu'; showSubMenu('settings-menu')">OPTIONS</div>
+                </div>
+                <div class="mp-top-right">
+                    <div class="mp-profile-icon" onclick="toggleMPStats()">&#128100;</div>
+                    <div class="mp-level">LV 1</div>
+                    <div class="mp-name">GUEST</div>
+                    <select id="mp-server-select" class="mp-server-select" onchange="selectMPServer(this.value)">
+                        <option value="">-- SERVER --</option>
+                        <option value="none" selected>OFFLINE</option>
+                    </select>
+                </div>
+            </div>
+            <div class="mp-center">
+                <div id="mp-car-container"></div>
+            </div>
+            <div class="mp-bottom-bar">
+                <div class="mp-bottom-left">
+                    <span class="mp-version">ONLINE PREVIEW v0.1</span>
+                    <span class="mp-net-status"><span class="mp-net-dot offline" id="mp-net-dot"></span><span id="mp-net-label">DISCONNECTED</span></span>
+                </div>
+                <div class="mp-icon-btn" title="MESSAGES">&#9993;</div>
+                <div class="mp-icon-btn" title="NOTIFICATIONS">&#128276;</div>
+            </div>
+
+            <div class="mp-lobby-overlay" id="mp-lobby-overlay">
+                <div class="mp-lobby-panel">
+                    <h2 id="mp-lobby-title">LOBBY</h2>
+                    <div id="mp-lobby-player-list"></div>
+                    <div class="mp-lobby-actions">
+                        <button class="mp-lobby-ready-btn" id="mp-lobby-ready-btn" onclick="toggleReady()">READY</button>
+                        <button class="mp-lobby-start-btn" id="mp-lobby-start-btn" onclick="startMatch()" disabled>START MATCH</button>
+                        <button class="mp-lobby-leave-btn" onclick="leaveLobby()">LEAVE</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mp-stats-overlay" id="mp-stats-overlay">
+                <div class="mp-stats-panel">
+                    <h2>PROFILE &amp; HISTORY</h2>
+                    <div class="mp-stat-row"><span class="mp-stat-label">ACCOUNT</span><span class="mp-stat-value">GUEST</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">LEVEL</span><span class="mp-stat-value">1</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">MATCHES PLAYED</span><span class="mp-stat-value">0</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">WINS</span><span class="mp-stat-value">0</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">LOSSES</span><span class="mp-stat-value">0</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">KILLS</span><span class="mp-stat-value">0</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">DEATHS</span><span class="mp-stat-value">0</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">FAVORITE VEHICLE</span><span class="mp-stat-value">N/A</span></div>
+                    <div class="mp-stat-row"><span class="mp-stat-label">TIME PLAYED</span><span class="mp-stat-value">0h 0m</span></div>
+                    <div class="mp-stats-close" onclick="toggleMPStats()">CLOSE</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- GAME LAYER -->
+    <div id="game-layer">
+        <div id="death-overlay">
+            <div id="respawn-text">Respawning in 5...</div>
+        </div>
+        <div id="audio-stats-overlay"></div>
+        <div id="eq-viz-container">
+            <canvas id="eq-canvas" width="200" height="60" style="border: 1px solid rgba(0,255,255,0.3); background: rgba(0,0,0,0.5);"></canvas>
+            <canvas id="ramp-canvas" width="80" height="60" style="border: 1px solid rgba(255,0,255,0.3); background: rgba(0,0,0,0.5);"></canvas>
+        </div>
+        <div id="pause-menu">
+            <div class="pause-copy">
+                <div class="pause-nav">
+                    <h1 style="color: #0af; margin-bottom: 20px; font-size: 3em;">PAUSED</h1>
+                    <div class="menu-item" onclick="window.game.togglePause()">RESUME</div>
+                    <div id="mi-controls" class="menu-item" onclick="window.game.showPanel('controls')">CONTROLS</div>
+                    <div id="mi-audio" class="menu-item" onclick="window.game.showPanel('audio')">AUDIO SETTINGS</div>
+                    <div class="menu-item" onclick="window.bootGame()">RESTART MATCH</div>
+                    <div class="menu-item" style="margin-top: 20px; color: #f44;" onclick="window.returnToMenu()">LEAVE MATCH</div>
+                </div>
+                
+            </div>
+
+            <div class="pause-panel-container">
+                    <div id="controls-panel" class="pause-panel">
+                        <h2 style="color: #f0f; margin-top: 0; border-bottom: 1px solid #f0f; padding-bottom: 10px;">CONTROLS</h2>
+                        <div class="selection-label">CONTROL SCHEME:</div>
+                        <select class="song-btn" id="pause-control-scheme-select" data-audio-setting="controlScheme" style="width: 320px; text-align: left; background: #222; color: #0af; border: 1px solid #0af; padding: 10px; cursor: pointer; font-family: inherit;">
+                            <option value="default">CURRENT / DEFAULT</option>
+                            <option value="slot-2">SCHEME SLOT 2</option>
+                            <option value="slot-3">SCHEME SLOT 3</option>
+                        </select>
+                        <div class="hint" style="margin-top: 8px; color:#7aa2b5;">Layout switching UI only. You can wire the real scheme logic later.</div>
+                        <div class="pause-panel-tabs">
+                            <button class="pause-tab active" type="button" data-control-layout-tab="keyboard" onclick="openPauseControlLayout('keyboard')">KEYBOARD / MOUSE</button>
+                            <button class="pause-tab" type="button" data-control-layout-tab="ps1" onclick="openPauseControlLayout('ps1')">PS1 BUTTONS</button>
+                            <button class="pause-tab" type="button" data-control-layout-tab="xbox" onclick="openPauseControlLayout('xbox')">XBOX BUTTONS</button>
+                            <button class="pause-tab" type="button" data-control-layout-tab="switch" onclick="openPauseControlLayout('switch')">SWITCH BUTTONS</button>
+                        </div>
+                        <div class="control-layout-panel active" data-control-layout-panel="keyboard">
+                            <div class="pause-control-grid">
+                                <div class="pause-control-card"><b>Drive</b><br>WASD / ARROWS</div>
+                                <div class="pause-control-card"><b>Brake</b><br>SPACE</div>
+                                <div class="pause-control-card"><b>Drift</b><br>SHIFT</div>
+                                <div class="pause-control-card"><b>Boost</b><br>B</div>
+                                <div class="pause-control-card"><b>Hover</b><br>H</div>
+                                <div class="pause-control-card"><b>Fire Bullets</b><br>F / LEFT MOUSE</div>
+                                <div class="pause-control-card"><b>Fire Weapon</b><br>Q</div>
+                                <div class="pause-control-card"><b>Fire Mine</b><br>E</div>
+                                <div class="pause-control-card"><b>Shield</b><br>Y</div>
+                                <div class="pause-control-card"><b>Jump</b><br>J</div>
+                                <div class="pause-control-card"><b>Gears</b><br>[ / ]</div>
+                                <div class="pause-control-card"><b>Next Weapon</b><br>MOUSE WHEEL</div>
+                            </div>
+                        </div>
+                        <div class="control-layout-panel" data-control-layout-panel="ps1">
+                            <div class="pause-control-grid">
+                                <div class="pause-control-card"><b>Steer</b><br>LEFT STICK</div>
+                                <div class="pause-control-card"><b>Throttle / Brake</b><br>R2 / L2</div>
+                                <div class="pause-control-card"><b>Drift</b><br>R1</div>
+                                <div class="pause-control-card"><b>Boost</b><br>L1</div>
+                                <div class="pause-control-card"><b>Hover</b><br>L3</div>
+                                <div class="pause-control-card"><b>Fire Bullets</b><br>SQUARE</div>
+                                <div class="pause-control-card"><b>Fire Weapon</b><br>CROSS</div>
+                                <div class="pause-control-card"><b>Fire Mine</b><br>CIRCLE</div>
+                                <div class="pause-control-card"><b>Shield</b><br>TRIANGLE</div>
+                                <div class="pause-control-card"><b>Jump</b><br>R3</div>
+                                <div class="pause-control-card"><b>Gears</b><br>RIGHT STICK UP / DOWN</div>
+                                <div class="pause-control-card"><b>Next Weapon</b><br>D-PAD LEFT / RIGHT</div>
+                            </div>
+                        </div>
+                        <div class="control-layout-panel" data-control-layout-panel="xbox">
+                            <div class="pause-control-grid">
+                                <div class="pause-control-card"><b>Steer</b><br>LEFT STICK</div>
+                                <div class="pause-control-card"><b>Throttle / Brake</b><br>RT / LT</div>
+                                <div class="pause-control-card"><b>Drift</b><br>RB</div>
+                                <div class="pause-control-card"><b>Boost</b><br>LB</div>
+                                <div class="pause-control-card"><b>Hover</b><br>L3</div>
+                                <div class="pause-control-card"><b>Fire Bullets</b><br>X</div>
+                                <div class="pause-control-card"><b>Fire Weapon</b><br>A</div>
+                                <div class="pause-control-card"><b>Fire Mine</b><br>B</div>
+                                <div class="pause-control-card"><b>Shield</b><br>Y</div>
+                                <div class="pause-control-card"><b>Jump</b><br>R3</div>
+                                <div class="pause-control-card"><b>Gears</b><br>RIGHT STICK UP / DOWN</div>
+                                <div class="pause-control-card"><b>Next Weapon</b><br>D-PAD LEFT / RIGHT</div>
+                            </div>
+                        </div>
+                        <div class="control-layout-panel" data-control-layout-panel="switch">
+                            <div class="pause-control-grid">
+                                <div class="pause-control-card"><b>Steer</b><br>LEFT STICK</div>
+                                <div class="pause-control-card"><b>Throttle / Brake</b><br>ZR / ZL</div>
+                                <div class="pause-control-card"><b>Drift</b><br>R</div>
+                                <div class="pause-control-card"><b>Boost</b><br>L</div>
+                                <div class="pause-control-card"><b>Hover</b><br>L3</div>
+                                <div class="pause-control-card"><b>Fire Bullets</b><br>Y</div>
+                                <div class="pause-control-card"><b>Fire Weapon</b><br>B</div>
+                                <div class="pause-control-card"><b>Fire Mine</b><br>A</div>
+                                <div class="pause-control-card"><b>Shield</b><br>X</div>
+                                <div class="pause-control-card"><b>Jump</b><br>R3</div>
+                                <div class="pause-control-card"><b>Gears</b><br>RIGHT STICK UP / DOWN</div>
+                                <div class="pause-control-card"><b>Next Weapon</b><br>D-PAD LEFT / RIGHT</div>
+                            </div>
+                        </div>
+                        <div class="menu-item" style="margin-top: 30px; font-size: 1.2em; text-align: center; border: 1px solid #666;" onclick="window.game.showPanel('none')">CLOSE PANEL</div>
+                    </div>
+
+                    <div id="audio-panel" class="pause-panel">
+                        <h2 style="color: #0af; margin-top: 0; border-bottom: 1px solid #0af; padding-bottom: 10px;">AUDIO SETTINGS</h2>
+                        <div class="audio-ctrl-group" style="padding: 10px 0;">
+                        <div class="selection-label">MASTER VOLUME:</div>
+                        <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="master" style="width: 100%;">
+                        <div class="selection-label">MENU MUSIC:</div>
+                        <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="menuMusic" style="width: 100%;">
+                        <div class="selection-label">MUSIC VOLUME:</div>
+                        <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="music" style="width: 100%;">
+                        <div class="selection-label">SOUND FX VOLUME:</div>
+                        <input type="range" class="audio-slider" min="0" max="100" data-audio-setting="sfx" style="width: 100%;">
+                        <div class="hint" style="color:#7aa2b5; margin: 8px 0 14px;">These are the same shared settings as the main menu. Menu music stays separate from match music, and master never stacks gain above unity.</div>
+                        <label style="font-size: 1em; margin-top: 15px; color: #0af; display: block; cursor: pointer;"><input type="checkbox" data-audio-setting="driveEnabled"> SoundDrive (Dynamic EQ)</label>
+                        <div class="selection-label" style="margin-top: 15px;">DRIVE STRENGTH:</div>
+                        <select class="song-btn" style="width: 100%; text-align: left; background: #222; color: #0af; border: 1px solid #0af; padding: 10px; cursor: pointer; font-family: inherit;" id="drive-strength-pause" data-audio-setting="driveStrength">
+                            <option value="max" selected>MAX (AGGRESSIVE)</option>
+                            <option value="soft">SOFT (BALANCED)</option>
+                            <option value="subtle">SUBTLE (GHOST)</option>
+                        </select>
+                        <label style="font-size: 1em; margin-top: 15px; color: #0af; display: block; cursor: pointer;"><input type="checkbox" data-audio-setting="viz"> SHOW AUDIO DASHBOARD</label>
+                        <div class="selection-label" style="margin-top: 20px;">NOW PLAYING:</div>
+                        <div id="pause-song-name" class="selection-value" data-current-track style="color: #fff; margin-bottom: 10px;">TRACK 1</div>
+                        <div style="display: flex; gap: 10px;">
+                            <button class="song-btn" style="flex: 1; padding: 10px;" onclick="window.stepSharedTrack(-1)">PREV</button>
+                            <button class="song-btn" style="flex: 1; padding: 10px;" onclick="window.stepSharedTrack(1)">NEXT</button>
+                        </div>
+                        </div>
+                        <div class="menu-item" style="margin-top: 20px; font-size: 1.2em; text-align: center; border: 1px solid #666;" onclick="window.game.showPanel('none')">CLOSE PANEL</div>
+                    </div>
+                </div>
+            <div class="pause-title-stage">
+                <div class="title-container pause-title">
+                    <div class="blackhole-sun-container">
+                        <div class="sun-effect">
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_fire"><div class="sun_fire_inner"></div></div>
+                            <div class="sun_border"></div>
+                        </div>
+                        <div class="cover"></div>
+                    </div>
+                    <svg class="dynamic-title" viewBox="0 0 1000 200">
+                        <text x="500" y="125" text-anchor="middle" class="title-text">DAY OR NIGHT</text>
+                        <g class="moon-group" transform="translate(800, 20)">
+                            <path d="M50 20 A60 60 0 1 0 110 140 A45 45 0 1 1 50 20" fill="#00ffff" filter="url(#glow-pause)" />
+                        </g>
+                        <defs>
+                            <filter id="glow-pause">
+                                <feGaussianBlur stdDeviation="5" result="coloredBlur"/>
+                                <feMerge>
+                                    <feMergeNode in="coloredBlur"/><feMergeNode in="SourceGraphic"/>
+                                </feMerge>
+                            </filter>
+                        </defs>
+                    </svg>
+                </div>
+            </div>
+        </div>
+        <div id="ui">
+            <div id="gp-status">Gamepad: Disconnected</div>
+        </div>
+        <div id="match-ui-right">
+            <div style="display: flex; justify-content: flex-end; align-items: baseline;">
+                <div id="speed-val" style="width: 80px; text-align: right;">0</div>
+                <div id="speed-unit" style="margin-left: 5px;">MPH</div>
+                <div id="gear-val">1</div>
+            </div>
+            <div id="boost-container"><div id="boost-bar"></div></div>
+            <div id="rpm-container"><div id="rpm-bar"></div></div>
+            <div id="lives-display" style="text-align: right; color: #f00; font-weight: bold; font-size: 1.5em; margin-top: 10px; text-shadow: 2px 2px 4px #000;">LIVES: 3</div>
+            <div id="hover-status" style="margin-top: 5px;">MODE: GROUND</div>
+        </div>
+        <div id="match-ui-left">
+            <div id="bps-val">BPS: 0</div>
+            <div id="energy-bar-container"><div id="energy-bar"></div></div>
+            <div id="health-bar-container"><div id="health-bar"></div></div>
+            <div id="mine-ammo" style="margin-top: 10px; font-size: 1.2em; color: #ff4400; text-shadow: 2px 2px 2px #000;">MINES: 7 / 7</div>
+            <div id="active-weapon-ui">
+                <div id="wep-name">ULTIMATE</div>
+                <div id="wep-ammo">AMMO: 3</div>
+                <div id="wep-hint">WHEEL TO ROTATE | Q TO FIRE WEAPON</div>
+            </div>
+        </div>
+
+        <!-- GAME OVER / MATCH WON OVERLAY -->
+        <div id="game-over-overlay" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 600; flex-direction: column; align-items: center; justify-content: center; pointer-events: auto;">
+            <h1 id="game-over-label" style="color: #f00; font-size: 5em; text-shadow: 0 0 30px #f00; margin-bottom: 20px;">GAME OVER</h1>
+            <div id="game-over-stats" style="color: #fff; font-size: 2em; text-align: center; line-height: 1.6; margin-bottom: 40px; font-family: inherit;">
+                TIME PLAYED: <span id="stat-time" style="color: #0af;">0:00</span><br>
+                KILLS: <span id="stat-kills" style="color: #0f0;">0</span>
+            </div>
+            <div style="display: flex; gap: 30px; flex-wrap: wrap; justify-content: center;">
+                <div class="option" onclick="window.bootGame()" style="font-size: 1.5em; padding: 15px 40px; border: 3px solid #0af; background: rgba(0,170,255,0.1); cursor: pointer; color: #0af;">RESTART</div>
+                <div class="option" onclick="window.returnToMenu()" style="font-size: 1.5em; padding: 15px 40px; border: 3px solid #fff; background: rgba(255,255,255,0.1); cursor: pointer; color: #fff;">MAIN MENU</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="importmap">
+        { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js", "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/", "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js" } }
+    </script>
+
+    <script>
+        window.aiCount = 3;
+    </script>
+    <script type="module">
+        import './gamecode/MenuApp.js';
+        import { NetworkManager } from './gamecode/NetworkManager.js';
+
+        const net = new NetworkManager();
+        window._net = net;
+        let _lobbyList = [];
+        let _iAmReady = false;
+        let _iAmHost = false;
+        let _lastPlayers = [];
+
+        net.onConnected = () => {
+            document.getElementById('mp-net-dot').className = 'mp-net-dot online';
+            document.getElementById('mp-net-label').textContent = 'CONNECTED';
+            refreshServerList();
+        };
+
+        net.onLobbyList = (data) => {
+            _lobbyList = data || [];
+            updateServerDropdown();
+        };
+
+        net.onJoinedLobby = (data) => {
+            _iAmHost = data.role === 'host';
+            document.getElementById('mp-lobby-overlay').classList.add('visible');
+            document.getElementById('mp-lobby-title').textContent = _iAmHost ? 'YOUR LOBBY' : 'LOBBY';
+            document.getElementById('mp-lobby-start-btn').style.display = _iAmHost ? 'inline-block' : 'none';
+            document.getElementById('mp-lobby-ready-btn').textContent = 'READY';
+            _iAmReady = false;
+        };
+
+        net.onLobbyUpdate = (data) => {
+            if (!data || !data.players) { console.warn('[Lobby] onLobbyUpdate: no players', data); return; }
+            _lastPlayers = data.players;
+            console.log('[Lobby] onLobbyUpdate players:', data.players.map(p => p.id + ':' + p.name + ' ready=' + p.ready));
+            const list = document.getElementById('mp-lobby-player-list');
+            if (!list) { console.error('[Lobby] mp-lobby-player-list not found'); return; }
+            list.innerHTML = '';
+            let allReady = data.players.length > 1;
+            data.players.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'mp-lobby-player' + (p.id === net.playerId ? ' you' : '');
+                div.innerHTML = `<span class="name">${p.name}${p.id === net.playerId ? ' (YOU)' : ''}</span><span class="status${p.ready ? ' ready' : ''}">${p.ready ? 'READY' : 'WAITING'}</span>`;
+                list.appendChild(div);
+                if (!p.ready && p.id !== net.playerId) allReady = false;
+            });
+            const startBtn = document.getElementById('mp-lobby-start-btn');
+            if (_iAmHost && startBtn) startBtn.disabled = !(data.players.length > 1 && allReady);
+        };
+
+        net.onLobbyClosed = () => {
+            document.getElementById('mp-lobby-overlay').classList.remove('visible');
+            _iAmHost = false;
+            _iAmReady = false;
+        };
+
+        net.onMatchStart = (data) => {
+            // Cleanup car preview menu
+            if (window.multiplayerMenu && window.multiplayerMenu.active) { window.multiplayerMenu.active = false; window.multiplayerMenu.dispose(); }
+            document.getElementById('mp-lobby-overlay').classList.remove('visible');
+            document.getElementById('multiplayer-menu').classList.add('hidden');
+            document.getElementById('menu-layer').style.display = 'none';
+            document.getElementById('webgl-canvas').style.display = 'none';
+            document.getElementById('game-layer').style.display = 'block';
+            document.querySelectorAll('.mp-lobby-overlay, .mp-stats-overlay').forEach(el => el.classList.remove('visible'));
+            import('./gamecode/MultiplayerMatch.js').then(mod => {
+                const match = new mod.MultiplayerMatch(net, net.role);
+                window._mpMatch = match;
+                match.init(data?.map);
+                const players = _lastPlayers.map(p => ({
+                    id: p.id,
+                    car: p.id === net.playerId ? window.currentCar : (window.currentCar || '35-impala')
+                }));
+                match.startMatch(players);
+            });
+        };
+
+        net.onError = (data) => {
+            console.warn('[Lobby]', data?.message);
+        };
+
+        function updateServerDropdown() {
+            const sel = document.getElementById('mp-server-select');
+            if (!sel) { console.warn('[Lobby] mp-server-select not found'); return; }
+            console.log('[Lobby] updateServerDropdown called, lobbies:', _lobbyList.length);
+            const currentVal = sel.value;
+            sel.innerHTML = '';
+            const opt0 = document.createElement('option');
+            opt0.value = ''; opt0.textContent = '-- SERVER --'; sel.appendChild(opt0);
+            const optHost = document.createElement('option');
+            optHost.value = '__host__'; optHost.textContent = '[+] START NEW ROOM';
+            optHost.className = 'opt-header';
+            sel.appendChild(optHost);
+            if (_lobbyList.length > 0) {
+                const sep = document.createElement('option'); sep.disabled = true; sep.textContent = '──────────────'; sel.appendChild(sep);
+                _lobbyList.forEach(l => {
+                    const opt = document.createElement('option');
+                    opt.value = l.id;
+                    opt.textContent = l.hostName + "'s Room (" + l.playerCount + "/" + l.maxPlayers + ")";
+                    opt.className = 'opt-room';
+                    sel.appendChild(opt);
+                });
+            }
+            const sep2 = document.createElement('option'); sep2.disabled = true; sep2.textContent = '──────────────'; sel.appendChild(sep2);
+            const optOff = document.createElement('option');
+            optOff.value = 'none'; optOff.textContent = 'OFFLINE';
+            sel.appendChild(optOff);
+            if (currentVal && [...sel.options].some(o => o.value === currentVal)) sel.value = currentVal;
+        }
+
+        window.refreshServerList = () => {
+            if (net.ws && net.ws.readyState === WebSocket.OPEN) {
+                net.findMatches();
+            }
+        };
+
+        window.selectMPServer = (val) => {
+            if (val === '__host__') {
+                window.startHost();
+            } else if (val && val !== 'none' && val !== '') {
+                window.joinMatch(val);
+            } else if (val === 'none') {
+                document.getElementById('mp-net-dot').className = 'mp-net-dot offline';
+                document.getElementById('mp-net-label').textContent = 'OFFLINE';
+            }
+        };
+
+        window.startHost = () => {
+            if (!net.ws || net.ws.readyState !== WebSocket.OPEN) {
+                net.connect();
+                setTimeout(() => window.startHost(), 500);
+                return;
+            }
+            const maps = ['ball', 'greyhills', 'riverbanks', 'area51', 'antarctica', 'canyon', 'prison', 'trailerpark', 'castle', 'raceden'];
+            const map = maps[Math.floor(Math.random() * maps.length)];
+            net.hostLobby({ hostName: 'GUEST', maxPlayers: 4, map });
+        };
+
+        window.joinMatch = (lobbyId) => {
+            if (!net.ws || net.ws.readyState !== WebSocket.OPEN) {
+                net.connect();
+                setTimeout(() => window.joinMatch(lobbyId), 500);
+                return;
+            }
+            net.joinLobby(lobbyId, { playerName: 'GUEST' });
+        };
+
+        window.toggleReady = () => {
+            if (!net.lobbyId) { console.warn('[Lobby] toggleReady: no lobby'); return; }
+            _iAmReady = !_iAmReady;
+            console.log('[Lobby] toggleReady:', _iAmReady, 'lobbyId:', net.lobbyId);
+            net.setReady(_iAmReady);
+            document.getElementById('mp-lobby-ready-btn').textContent = _iAmReady ? 'UNREADY' : 'READY';
+            document.getElementById('mp-lobby-ready-btn').classList.toggle('is-ready', _iAmReady);
+        };
+
+        window.startMatch = () => {
+            if (_iAmHost) net.startMatch();
+        };
+
+        window.leaveLobby = () => {
+            console.log('[Lobby] leaveLobby, lobbyId:', net.lobbyId);
+            net.leaveLobby();
+            document.getElementById('mp-lobby-overlay').classList.remove('visible');
+            _iAmReady = false;
+            _iAmHost = false;
+            _lastPlayers = [];
+        };
+
+        if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') {
+            net.connect();
+        }
+    </script>
+</body>
+</html>
