@@ -1,0 +1,587 @@
+================================================================================
+  ROAD KNIGHT — ONLINE MULTIPLAYER NETWORK SYSTEM DESIGN GUIDE
+================================================================================
+  Architecture: Dedicated server authoritative
+  Client: Each player runs full sim locally, renders own car, sends inputs
+  Server: Runs headless sim, syncs all players, validates actions
+  Target: Works as .exe (Electron) or served on neverendever.com
+
+================================================================================
+1. ARCHITECTURE OVERVIEW
+================================================================================
+
+                          dedicated game server
+                                |
+                        WebSocket (TCP-like)
+                                |
+              +----------------+----------------+
+              |                |                |
+          player 1         player 2         player 3
+        (own window)    (own window)     (own window)
+
+  - The GAME SERVER is a headless Node.js process that runs physics and
+    combat logic at a fixed 60hz tick rate. It is the AUTHORITY on position,
+    damage, collisions, pickups, and kills.
+  - Each CLIENT runs the rendering locally (Three.js) + applies its own inputs
+    immediately for responsive feel. The server confirms or corrects positions.
+  - The SIGNAL SERVER is SEPARATE. It handles lobby discovery and matchmaking
+    only. It does NOT run game logic.
+
+  WHY DEDICATED SERVER INSTEAD OF P2P:
+  - No "host migration" nightmare. Server is always online.
+  - No NAT traversal problems. WebSocket works through almost any firewall.
+  - No one player gets an advantage from hosting.
+  - Works as .exe: the server runs as a headless Node process, the client
+    runs as Electron. Same codebase, different entry points.
+
+================================================================================
+2. THE TWO SERVERS (DON'T CONFUSE THEM)
+================================================================================
+
+  A) SIGNAL SERVER (matchmaking-signal-server.js)
+     - Port 3001
+     - WebSocket
+     - Handles: lobby list, join/leave, WebRTC handshake
+     - Stateless, lightweight
+     - Deployed once on a $5 VPS (or your own URL)
+     - Same for dev and production
+
+  B) GAME SERVER (OnlineMatchServer.js)
+     - Port 3002 (or dynamic)
+     - WebSocket or UDP
+     - Handles: game tick, physics, sync, damage validation
+     - Stateful, runs match logic
+     - One instance per match
+     - In dev: can run on localhost alongside the client
+     - In production: runs on your server URL
+
+  THE CONFUSION TRAP:
+  - The current guide (v1) describes P2P and calls the signal server the
+    "host." This is WRONG for what we are building.
+  - If two devs are working on this: ONE person owns the game server logic
+    (OnlineMatchServer.js + physics sync). THE OTHER owns the client
+    (MultiplayerMatch.js + input + rendering). The signal server is shared
+    infrastructure both call into.
+
+================================================================================
+3. HOW A MATCH FLOWS
+================================================================================
+
+  1) SIGNAL SERVER: Player A clicks "FIND MATCH"
+     -> Signal server returns list of available lobbies
+     -> Player A selects one or creates a new lobby
+
+  2) GAME SERVER: When lobby is full, signal server tells the game server
+     to spin up a match instance on port 3002 (or whatever)
+     -> Game server creates world, spawns cars, starts 60hz tick loop
+
+  3) CLIENTS CONNECT: Each player connects to the game server via WebSocket
+     -> Handshake: { type: "join", playerId, carType, map }
+     -> Game server assigns player slot, sends initial world state
+
+  4) MATCH RUNS:
+     Client -> Server: { type: "input", seq, inputs: {...} }
+     Server -> Client: { type: "sync", tick, players: [...], events: [...] }
+
+  5) MATCH ENDS:
+     -> Server sends results, disconnects, shuts down
+
+================================================================================
+4. INPUT VS SYNC — WHAT GOES WHERE
+================================================================================
+
+  Client -> Server (every client frame, ~60hz, but send at ~20-30hz):
+  {
+    type: "input",
+    seq: 142,                       // your local frame counter
+    inputs: {
+      throttle: 0.75,               // -1 to 1
+      steer: -0.3,                  // -1 to 1
+      brake: false,
+      jump: false,                  // true on the frame the key is pressed
+      fireBullet: false,
+      fireMine: false,
+      fireWeapon: false,            // Q / ult or selected weapon
+      shield: false,
+      hover: false,                 // toggle
+      boost: false,
+      gearUp: false,                // true on the frame key is pressed
+      gearDown: false,
+      lean: false,                  // L3 held
+      inputBuffer: "down-down-up",  // combo string, or null
+      hydraulics: {                 // right stick, only if L3 held
+        pitch: 0,
+        roll: 0
+      },
+      airFlip: "roll" | "pitch" | null
+    }
+  }
+
+  Server -> Client (every server tick, 60hz):
+  {
+    type: "sync",
+    tick: 3891,
+    players: [
+      {
+        id: "abc",
+        pos: [x, y, z],
+        quat: [x, y, z, w],         // rotation quaternion
+        vel: [vx, vy, vz],
+        health: 85,
+        energy: 42,
+        nitro: 33,
+        curGear: 3,
+        isDead: false,
+        isDrifting: false,
+        hoverMode: false,
+        shieldActive: false
+      }
+    ],
+    events: [                        // non-physics things that happened
+      { type: "mine_dropped", pos: [...], owner: "abc" },
+      { type: "projectile_fired", id: "proj_1", pos: [...], vel: [...], owner: "abc" },
+      { type: "pickup_collected", id: "p_1", player: "abc" },
+      { type: "damage_dealt", target: "def", amount: 30, source: "abc" },
+      { type: "kill", victim: "def", killer: "abc" },
+      { type: "ult_used", player: "abc", ult: "shockwave" }
+    ],
+    destroyedProjectiles: ["proj_1", "proj_3"],
+    destroyedMines: ["mine_2"],
+    barrelStates: [
+      { id: "b_1", pos: [...], isDead: false }
+    ]
+  }
+
+  WHY INPUTS INSTEAD OF POSITIONS:
+  - Each player runs their own physics locally. Server confirms or corrects.
+  - Sending inputs is MUCH less bandwidth than sending full state every frame.
+  - Server re-simulates your inputs to validate them. If your local sim drifts,
+    server snaps you back.
+
+================================================================================
+5. INTERPOLATION STRATEGIES (the "feels laggy" problem)
+================================================================================
+
+  The server sends snapshots at a fixed rate (let's say 60hz to match the
+  physics lock). But packets can arrive late or out of order. Between two
+  snapshots, the client needs to GUESS where other cars are. You have three
+  choices:
+
+  --- SNAP (no interpolation) ---
+  How it works:
+    - Car position = most recent server snapshot position
+    - Every time a snapshot arrives, the car TELEPORTS there
+
+  Pros:
+    - Simplest to code
+    - Always precisely matches server state
+
+  Cons:
+    - VISIBLE TELEPORTING. Every packet arrival = car jitters.
+    - At 60hz the jitter is small but still visible as micro-stutter
+    - At 30hz it looks like a slideshow
+
+  When to use:
+    - NEVER for other player's cars (looks terrible)
+    - OK for your own car IF you trust server position (but you should
+      use client prediction instead)
+    - OK for UI elements (scoreboard, timer)
+
+  --- LINEAR INTERPOLATION ---
+  How it works:
+    - Client keeps the last TWO server snapshots: previous and current
+    - Between snapshots, lerp between the two:
+        pos = prevPos + (curPos - prevPos) * elapsed / tickInterval
+    - When a new snapshot arrives, prev = cur, cur = new
+
+  Pros:
+    - Smooth movement between snapshots
+    - Very cheap (one lerp per tick)
+    - Easy to code
+
+  Cons:
+    - ALWAYS BEHIND by 1 tick. Car positions are ~16ms old (at 60hz).
+    - Movement changes direction at sharp angles (corners look jagged)
+    - Does not account for velocity — cars appear to slide when they
+      should be turning
+
+  Code:
+    function lerp(a, b, t) { return a + (b - a) * t; }
+    let t = (now - prevSnapshotTime) / tickInterval;
+    car.position.x = lerp(prevPos.x, curPos.x, t);
+    car.position.z = lerp(prevPos.z, curPos.z, t);
+
+  --- HERMITE INTERPOLATION (aka cubic spline) ---
+  How it works:
+    - Same two-snapshot buffer as linear, but uses VELOCITY data from
+      the server to curve the path between points
+    - Instead of a straight line, it predicts the arc the car would take
+
+  Pros:
+    - MUCH smoother for turning cars. Corners look natural.
+    - With good velocity data, prediction can match server state closely
+
+  Cons:
+    - Needs velocity in the snapshot (more bandwidth)
+    - Slightly more expensive (still cheap — a few vector ops)
+    - Needs a third point or velocity estimate to calculate the curve
+    - Overshoots if velocity changes suddenly (car hits a wall)
+
+  Code:
+    function hermite(t, p0, p1, v0, v1) {
+      let t2 = t * t, t3 = t2 * t;
+      let h1 = 2*t3 - 3*t2 + 1;   // start point influence
+      let h2 = -2*t3 + 3*t2;      // end point influence
+      let h3 = t3 - 2*t2 + t;     // start velocity influence
+      let h4 = t3 - t2;            // end velocity influence
+      return h1*p0 + h2*p1 + h3*v0 + h4*v1;
+    }
+    // v0 and v1 are velocity * tickInterval (distance to extrapolate)
+
+  --- RECOMMENDATION ---
+  Start with LINEAR. It is good enough for a 60hz lock. If playtests
+  complain about "cars sliding around corners," upgrade to HERMITE.
+  Never use SNAP for remote cars.
+
+  WHAT ABOUT YOUR OWN CAR?
+  - Your own car uses CLIENT PREDICTION, not interpolation.
+  - You apply your inputs locally, run your own physics, and render
+    immediately. Zero latency on your own controls.
+  - When the server snapshot arrives, compare your position to the
+    server's. If they differ (lag spike), smoothly correct over
+    50-100ms rather than snapping:
+      error = serverPos - localPos;
+      localPos += error * Math.min(1.0, 0.1 * 60 * dt);
+  - This is called "reconciliation." It hides corrections as small
+    nudges instead of teleports.
+
+================================================================================
+6. BANDWIDTH BUDGET
+================================================================================
+
+  At 60hz with 8 players:
+
+  Client -> Server (each frame):
+    JSON ~150 bytes per input packet
+    60 fps * 150 bytes = 9 KB/s upload per player
+    8 players * 9 KB/s = 72 KB/s total server inbound
+
+  Server -> Client (each tick):
+    JSON ~400 bytes for 8 players + ~200 bytes for events
+    60 tick * 600 bytes = 36 KB/s download per player
+    8 players * 36 KB/s = 288 KB/s total server outbound
+
+  This is FINE. A budget $5 VPS can handle this. Do NOT optimize early.
+  If bandwidth becomes a problem later:
+    - Send inputs at 30hz instead of 60hz (server still sims at 60)
+    - Use binary encoding instead of JSON (MessagePack or flatbuffers)
+    - Delta compression (only send what changed since last tick)
+
+  But DO use a plaintext protocol first. Debugging binary protocols
+  with another dev remotely is hell. Start with JSON, optimize later.
+
+================================================================================
+7. THE 60FPS LOCK — WHY IT MATTERS
+================================================================================
+
+  The game server runs at a LOCKED 60hz tick rate. The client also runs at
+  60fps. This means every server tick corresponds to exactly one client
+  frame. No delta time ambiguity. Physics converge identically.
+
+  GAME SERVER LOOP:
+    setInterval(() => {
+      receivePlayerInputs();
+      physicsWorld.step(1/60);     // fixed timestep
+      processCombat();
+      checkWinConditions();
+      broadcastSync();
+    }, 1000/60);
+
+  CLIENT RENDER LOOP:
+    requestAnimationFrame(() => {
+      applyOwnInputs();            // immediate, no wait
+      interpolateRemoteCars();     // smooth other cars
+      sendInputsToServer();        // batched at 60hz
+      render();
+    });
+
+  THE TRAP:
+  - requestAnimationFrame is NOT exactly 60fps. It can be 58, 62, 144, etc.
+  - setInterval is ALSO not exactly 60hz (JS timer drift).
+  - Both loops need a DRIFT CORRECTION:
+      server: check actual elapsed time, step physics multiple times
+              if the loop ran late (fixed timestep accumulator pattern)
+      client: use the server tick number to align your interpolation
+
+================================================================================
+8. SHARED VS SEPARATE FILES (avoid merge conflicts)
+================================================================================
+
+  SHARED (both devs read these, edits coordinate):
+    objects/cars/*              — 3D car models (binary, no conflicts)
+    objects/pickups/*           — pickup models
+    maps/*                      — map loaders (CityBasic.js, DevMap.js)
+    gamecode/Config.js          — CONFIG.CARS, CONFIG.gears (shared base)
+    gamecode/Weps.js            — weapon type definitions
+    gamecode/Ults.js            — ultimate abilities (shared by all game modes)
+    gamecode/Barrels.js         — barrel physics (shared)
+    gamecode/Pickups.js         — pickup spawning (shared)
+    gamecode/Projectiles.js     — bullet/mine logic (shared)
+
+  ARCADE (one dev owns this):
+    gamecode/ArcadeTestGame.js  — offline arcade game loop
+    gamecode/ArcadeVehicle.js   — vehicle physics (shared interface, arcade
+                                  tuning may differ from online)
+    gamecode/AIController2.js   — AI for offline bots
+    gamecode/AIProfiles2.js     — AI difficulty profiles
+
+  STORY (one dev owns this):
+    gamecode/Game.js            — offline survival/story loop
+
+  ONLINE (one dev owns this):
+    gamecode/MultiplayerMatch.js  — online match game loop
+    gamecode/MultiplayerMenu.js   — online lobby UI
+    gamecode/NetworkManager.js    — WebSocket + connection management
+    gamecode/OnlineMatchServer.js — headless dedicated server (NEW)
+    gamecode/NetworkSync.js       — sync protocol + interpolation (NEW)
+    server/matchmaking-signal-server.js  — lobby/signal server
+
+  THE CRITICAL RULE:
+  - ArcadeVehicle.js is used by ALL THREE MODES (arcade, story, online).
+    Whoever edits it must coordinate. A physics change for arcade affects
+    online feel and vice versa.
+  - Solution: if arcade and online tuning diverge, create shared
+    physics constants in Config.js that each mode overrides:
+      Config.arcade = { engineForce: 8000, ... }
+      Config.online = { engineForce: 7500, ... }
+    Both modes call the same ArcadeVehicle code but pass different config.
+
+================================================================================
+9. DEV WORKFLOW (testing before you have a live URL)
+================================================================================
+
+  PHASE 1 — Single machine, two browser tabs:
+    Terminal 1: node server/matchmaking-signal-server.js
+    Terminal 2: node server/OnlineMatchServer.js    (starts on port 3002)
+    Terminal 3: npx serve . -p 8080
+    Tab A: http://localhost:8080   (Player 1)
+    Tab B: http://localhost:8080   (Player 2)
+
+    Both connect to WebSocket at localhost:3002. The game server runs
+    headless in the terminal. No network latency (good for logic testing).
+
+  PHASE 2 — Two machines on same LAN:
+    Machine A (Windows): hosts signal server + game server
+      - ipconfig -> 192.168.1.50
+      - Edit NetworkManager.js: SIGNAL_URL = "ws://192.168.1.50:3001"
+      - Edit OnlineMatchServer.js: bind to 0.0.0.0:3002
+    Machine B: open http://192.168.1.50:8080
+
+    Now you have REAL network latency. This is where interpolation bugs
+    show up that you couldn't see on localhost.
+
+  PHASE 3 — Across the internet (before production):
+    Option A — Tunnel (quick test):
+      ngrok tcp 3001   -> gets you a URL like 2.tcp.ngrok.io:12345
+      ngrok tcp 3002
+      Both devs connect through ngrok. Works for 2-hour test sessions.
+      Free but slow.
+
+    Option B — Dev VPS (recommended for steady work):
+      $5/month DigitalOcean or your own URL
+      Deploy signal server + game server (both lightweight)
+      Both devs connect to the live URL
+      Make NetworkManager.js accept a URL parameter so you can switch
+      between localhost and live without editing code:
+        const url = new URLSearchParams(window.location.search);
+        const serverUrl = url.get('server') || 'ws://localhost:3002';
+
+  WHAT TO AVOID:
+  - Do NOT hardcode the server URL. Someone will commit localhost and
+    the other dev will waste an hour debugging.
+  - Do NOT test on the same machine with one tab. Chrome throttles
+    background tabs. Alt-tab to the server tab = WebSocket disconnects.
+    Use two browser windows side by side.
+  - Do NOT skip Phase 2. Localhost hides ALL interpolation bugs.
+    You will think it works perfectly, then deploy and wonder why
+    cars teleport over the internet.
+
+================================================================================
+10. THE SYNC PROTOCOL — DEFINE BEFORE CODING
+================================================================================
+
+  Before either dev writes a line of network code, write the message
+  schemas in a shared doc. Both agree on field names, types, and
+  meanings. Then dev A builds the server, dev B builds the client,
+  and they connect on the first try.
+
+  MANDATORY MESSAGES:
+
+  Client -> Game Server:
+    join:         { type: "join", name, carType }
+    input:        { type: "input", seq, inputs: {...} }    // 60hz
+    ready:        { type: "ready", ready: true/false }
+    chat:         { type: "chat", message }
+
+  Game Server -> Client:
+    welcome:      { type: "welcome", playerId, tick, players: [...] }
+    sync:         { type: "sync", tick, players: [...], events: [...] }
+    match_start:  { type: "match_start", countdown: 5 }
+    match_end:    { type: "match_end", results: [...] }
+    player_left:  { type: "player_left", playerId }
+    error:        { type: "error", message }
+
+  OPTIONAL MESSAGES (add later):
+    ping:         { type: "ping", clientTime }       // latency measurement
+    pong:         { type: "pong", clientTime, serverTime }
+    spectate:     { type: "spectate" }
+    loadout:      { type: "loadout", weapon1, weapon2, ult }  // pre-match
+
+  THE RULE: If a field name differs between server send and client
+  receive, it will silently fail (undefined). Both devs must use
+  EXACTLY the same field names. Write the schemas once. Stick to them.
+
+================================================================================
+11. ELECTRON / .EXE PLAN (from day one)
+================================================================================
+
+  The game is pure web (Three.js + HTML). This means Electron packaging
+  is straightforward. But you must design for it from the start:
+
+  - Do NOT hardcode file paths. Use relative paths for everything.
+    Electron serves files from "./gamecode/..." just like npx serve.
+  - The game server runs as a Node process. In Electron, it runs in the
+    MAIN process or as a child_process fork.
+  - The client rendering runs in the RENDERER process (a Chromium tab).
+  - WebSocket communication between main and renderer is done via IPC,
+    not by opening a port. This way the user doesn't need to run a
+    separate terminal.
+
+  FILE STRUCTURE FOR ELECTRON:
+    road-knight/
+      package.json              (electron-builder config + deps)
+      main.js                   (Electron main process — runs game server)
+      preload.js                 (IPC bridge between server and renderer)
+      index.html                 (client — same as web version)
+      gamecode/                  (shared with web version)
+        MultiplayerMatch.js
+        OnlineMatchServer.js     (also imported by main.js)
+        ...
+      server/
+        matchmaking-signal-server.js
+
+  THE WEB VERSION:
+    index.html loads gamecode/ files directly as modules.
+    Game server is a separate process (or a web worker).
+
+  THE EXE VERSION:
+    Electron loads index.html as the renderer.
+    Game server runs inside main.js (or as a forked process).
+    Same code, different entry point.
+
+  DO NOT build a separate "desktop version." Same repo, same files,
+  different packaging. The other dev can test in browser, you can test
+  in Electron, and the code is identical.
+
+================================================================================
+12. THE DEV BOUNDARIES (who does what)
+================================================================================
+
+  Dev A (online/server focus):
+    gamecode/OnlineMatchServer.js   — build the dedicated server
+    gamecode/NetworkSync.js         — write the sync protocol
+    server/matchmaking-signal-server.js — lobby server
+    Server-side validation of inputs
+
+  Dev B (client/rendering focus):
+    gamecode/MultiplayerMatch.js    — online match game loop
+    gamecode/NetworkManager.js      — WebSocket client
+    gamecode/MultiplayerMenu.js     — lobby UI + car/map selection
+    Client-side interpolation + prediction
+
+  Both (shared, coordinate):
+    gamecode/ArcadeVehicle.js       — physics tweaks for online
+    gamecode/Config.js              — shared constants
+    gamecode/Weps.js / Ults.js      — weapons work the same everywhere
+
+  THE SHARED INTERFACE:
+  - Dev A defines the message schemas (section 10)
+  - Dev B builds the client to match those schemas
+  - They test by running server + client separately
+  - If the protocol changes, both update simultaneously
+
+================================================================================
+13. COMMON PITFALLS (save yourself the arguments)
+================================================================================
+
+  "My car feels fine but other cars jitter"
+    -> Interpolation missing or too many dropped packets
+    -> Check: is the server sending sync at the right rate?
+    -> Fix: render extrapolation (keep moving in last known direction
+       if no packet arrives for 100ms)
+
+  "He sees me somewhere I wasn't"
+    -> Server rejected or corrected your position
+    -> Check: is your local sim diverging from server sim?
+    -> Fix: make sure both use identical physics (same Config values,
+       same ArcadeVehicle code)
+
+  "Combo inputs don't work online"
+    -> "down-down-up" sent as three separate input frames, but one
+       frame dropped on the way. Server sees "down-up" and ignores it.
+    -> Fix: send the combo as a STRING ("down-down-up") in the input
+       packet, not as individual key presses across multiple frames
+
+  "Latency makes the game feel sluggish"
+    -> Client prediction not working or disabled
+    -> Check: are you applying inputs locally before server confirms?
+    -> Fix: always apply inputs on the same frame they're pressed.
+       Server confirmation is only for correction, not permission.
+
+  "The exe won't connect to the server"
+    -> Electron's Content Security Policy blocks WebSocket to localhost
+    -> Fix: add "webSocket: true" to the CSP in main.js
+
+================================================================================
+14. PRODUCTION DEPLOYMENT (when it's ready)
+================================================================================
+
+  You have a URL you want to host on. The setup:
+
+    neverendever.com (or your domain)
+      ├─ signal server (port 3001, or behind nginx proxy)
+      ├─ game server pool (ports 3002-3010)
+      └─ static files (index.html, gamecode/, objects/)
+
+    Clients visit: https://neverendever.com/roadknight/
+    Browser loads index.html as modules.
+    JS connects to wss://neverendever.com:3001 (signal)
+    JS connects to wss://neverendever.com:3002 (game server)
+
+    NO WebRTC. NO P2P. Everything goes through the server.
+    This means:
+    - Users don't need to open ports
+    - Users don't need STUN/TURN servers
+    - You control the game logic entirely
+    - Anti-cheat is easy (server validates everything)
+
+    The only cost: you need a VPS or server that can run Node.js
+    and keep a WebSocket open for each connected player.
+
+================================================================================
+15. QUICK START (for the other dev to get running immediately)
+================================================================================
+
+  1) Install Node.js v18+
+  2) Clone the repo
+  3) Terminal 1: node server/matchmaking-signal-server.js
+  4) Terminal 2: node server/OnlineMatchServer.js
+  5) Terminal 3: npx serve . -p 8080
+  6) Open http://localhost:8080 in two browser windows
+  7) Both click "FIND MATCH" — they should see each other
+
+  If signals/server files don't exist yet, dev A builds them first
+  while dev B works on the client game loop (MultiplayerMatch.js).
+  The client should gracefully handle "server not available" and
+  show a "Connecting..." screen that retries every 2 seconds.
+================================================================================
