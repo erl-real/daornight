@@ -140,8 +140,10 @@ export class ArcadeVehicle {
         this.leanDir = 0;
         this.isAirFlipping = false;
         this.airFlipTimer = 0;
-        this.airFlipDir = 0;
-        this.airFlipType = 'roll'; 
+        this.airFlipRoll = 0;
+        this.airFlipPitch = 0;
+        this.airFlipYaw = 0;
+        this.airFlipYawOffset = 0;
         this.visualAirPitch = 0; 
         
         this.hydraulics = {
@@ -223,20 +225,24 @@ export class ArcadeVehicle {
         this.hoverLow = !this.hoverLow;
     }
 
-    performAirFlip(direction, type = 'roll') {
+    performAirFlip(flipX, flipY, spinZ) {
         if (this.isAirFlipping) return;
         this.isAirFlipping = true;
         this.airFlipTimer = 0;
-        this.airFlipDir = direction;
-        this.airFlipType = type;
-        
-        if (type === 'roll') {
-            const right = new CANNON.Vec3().copy(this.chassisBody.quaternion.vmult(new CANNON.Vec3(1, 0, 0)));
-            this.chassisBody.velocity.vadd(right.scale(direction * 25), this.chassisBody.velocity);
-        } else {
-            const forward = new CANNON.Vec3().copy(this.chassisBody.quaternion.vmult(new CANNON.Vec3(0, 0, -1)));
-            this.chassisBody.velocity.vadd(forward.scale(direction * 25), this.chassisBody.velocity);
-        }
+        this.airFlipRoll = flipX;
+        this.airFlipPitch = flipY;
+        this.airFlipYaw = spinZ;
+        this.airFlipYawOffset = 0;
+
+        const forward = new CANNON.Vec3().copy(this.chassisBody.quaternion.vmult(new CANNON.Vec3(0, 0, -1)));
+        const right = new CANNON.Vec3().copy(this.chassisBody.quaternion.vmult(new CANNON.Vec3(1, 0, 0)));
+
+        const impulse = new CANNON.Vec3(
+            right.x * flipX * 25 + forward.x * flipY * 25,
+            0,
+            right.z * flipX * 25 + forward.z * flipY * 25
+        );
+        this.chassisBody.velocity.vadd(impulse, this.chassisBody.velocity);
     }
 
     die() {
@@ -499,7 +505,7 @@ export class ArcadeVehicle {
         let targetYawOffset = 0;
         if (!this.isDrifting && !leanActive) targetYawOffset = steerInput * 0.25; 
         this.steeringYawOffset += (targetYawOffset - this.steeringYawOffset) * 8 * dt;
-        this.carMesh.rotation.y = baseYaw + this.steeringYawOffset;
+        this.carMesh.rotation.y = baseYaw + this.steeringYawOffset + (this.airFlipYawOffset || 0);
 
         const quat = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, this.carMesh.rotation.y, 0));
         const rayMask = ~this.collisionFilterGroup;
@@ -551,11 +557,13 @@ export class ArcadeVehicle {
         let flipRoll = 0;
         let flipPitch = 0;
         if (this.isAirFlipping) {
-            this.airFlipTimer += dt * 2.5; 
-            if (this.airFlipTimer >= 1.0) { this.isAirFlipping = false; this.airFlipTimer = 0; }
+            this.airFlipTimer += dt * 2.5;
+            if (this.airFlipTimer >= 1.0) { this.isAirFlipping = false; this.airFlipTimer = 0; this.airFlipYawOffset = 0; }
             else {
-                const angle = -this.airFlipDir * Math.PI * 2 * this.airFlipTimer;
-                if (this.airFlipType === 'roll') flipRoll = angle; else flipPitch = angle;
+                const angle = -Math.PI * 2 * this.airFlipTimer;
+                flipRoll = angle * this.airFlipRoll;
+                flipPitch = angle * this.airFlipPitch;
+                this.airFlipYawOffset = angle * this.airFlipYaw;
             }
         }
 

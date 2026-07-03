@@ -32,13 +32,14 @@ export class ArcadePreview {
 
         this.animate();
 
-        window.addEventListener('resize', () => {
+        this._resizeHandler = () => {
             if (this._active) {
                 this.camera.aspect = this.container.clientWidth / this.container.clientHeight;
                 this.camera.updateProjectionMatrix();
                 this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
             }
-        });
+        };
+        window.addEventListener('resize', this._resizeHandler);
     }
 
     updateSize() {
@@ -132,16 +133,63 @@ export class ArcadePreview {
         LoadingUI.hide();
     }
 
+    _disposeObject(obj) {
+        if (!obj) return;
+        if (obj.geometry) { obj.geometry.dispose(); obj.geometry = null; }
+        if (obj.material) {
+            if (Array.isArray(obj.material)) { obj.material.forEach(m => m.dispose()); }
+            else { obj.material.dispose(); }
+            obj.material = null;
+        }
+    }
+
+    _disposeTraverse(root) {
+        root.traverse(child => {
+            if (child.isMesh || child.isSkinnedMesh) {
+                this._disposeObject(child);
+            }
+        });
+    }
+
+    _disposeSceneChildren() {
+        while (this.scene.children.length) {
+            const child = this.scene.children[0];
+            if (child.isLight) {
+                this.scene.remove(child);
+                continue;
+            }
+            this._disposeTraverse(child);
+            this.scene.remove(child);
+        }
+    }
+
     cleanup() {
         this.ults = null;
-        this.previewProjectiles.forEach(p => this.scene.remove(p.mesh));
+
+        this.previewProjectiles.forEach(p => {
+            if (p.mesh) { this._disposeObject(p.mesh); this.scene.remove(p.mesh); }
+        });
         this.previewProjectiles = [];
 
         if (this.vehicle) {
-            if (this.vehicle.carMesh) this.scene.remove(this.vehicle.carMesh);
-            if (this.vehicle.hitboxHelper) this.scene.remove(this.vehicle.hitboxHelper);
-            (this.vehicle.visualDots || []).forEach(d => this.scene.remove(d));
-            if (this.vehicle.debugPoint) this.scene.remove(this.vehicle.debugPoint);
+            if (this.vehicle.carMesh) {
+                this._disposeTraverse(this.vehicle.carMesh);
+                this.scene.remove(this.vehicle.carMesh);
+            }
+            if (this.vehicle.hitboxHelper) {
+                this._disposeObject(this.vehicle.hitboxHelper);
+                this.scene.remove(this.vehicle.hitboxHelper);
+            }
+            (this.vehicle.visualDots || []).forEach(d => { this._disposeObject(d); this.scene.remove(d); });
+            if (this.vehicle.debugPoint) { this._disposeObject(this.vehicle.debugPoint); this.scene.remove(this.vehicle.debugPoint); }
+
+            if (this.vehicle.particleGeo) this.vehicle.particleGeo.dispose();
+            if (this.vehicle.particleMats) {
+                Object.values(this.vehicle.particleMats).forEach(m => m.dispose());
+            }
+            if (this.vehicle.iceMaterial) this.vehicle.iceMaterial.dispose();
+            if (this.vehicle.deadMaterial) this.vehicle.deadMaterial.dispose();
+
             this.vehicle = null;
         }
 
@@ -153,8 +201,7 @@ export class ArcadePreview {
             this._previewTargets = null;
         }
 
-        // Remove all scene objects from ult system and previous previews
-        while (this.scene.children.length) this.scene.remove(this.scene.children[0]);
+        this._disposeSceneChildren();
         this.addBaseScene();
 
         if (this.world) {
@@ -162,6 +209,34 @@ export class ArcadePreview {
             this.world = null;
         }
         this.groundBody = null;
+    }
+
+    dispose() {
+        this._active = false;
+        if (this._resizeHandler) {
+            window.removeEventListener('resize', this._resizeHandler);
+            this._resizeHandler = null;
+        }
+        try { this.cleanup(); } catch (e) { console.warn('preview cleanup err:', e); }
+        try { this._disposeSceneChildren(); } catch (e) { console.warn('preview scene dispose err:', e); }
+        if (this.renderer) {
+            try { this.renderer.dispose(); } catch (e) { console.warn('renderer dispose err:', e); }
+            try {
+                const canvas = this.renderer.domElement;
+                if (canvas) {
+                    const gl = canvas.getContext('webgl2') || canvas.getContext('webgl');
+                    if (gl) {
+                        const ext = gl.getExtension('WEBGL_lose_context');
+                        if (ext) ext.loseContext();
+                    }
+                    if (canvas.parentNode) canvas.parentNode.removeChild(canvas);
+                }
+            } catch (e) { console.warn('context loss err:', e); }
+            this.renderer = null;
+        }
+        this.scene = null;
+        this.camera = null;
+        this.container = null;
     }
 
     addBaseScene() {

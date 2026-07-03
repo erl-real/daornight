@@ -13,8 +13,7 @@ import { ArcadePreview } from './ArcadePreview.js';
 import { MenuMusicManager, MENU_MUSIC_TRACKS, DEFAULT_AUDIO_SETTINGS, AUDIO_SETTINGS_KEY, loadRadioStations, updateRadioUI } from './MenuMusicManager.js';
 import { MultiplayerMenu } from './MultiplayerMenu.js';
 
-const arcadePreview = new ArcadePreview();
-window.arcadePreview = arcadePreview;
+window.arcadePreview = new ArcadePreview();
 let multiplayerMenu = null;
 let menuGL = null;
 window.currentCar = 'beachbug';
@@ -40,7 +39,6 @@ const MAP_CONFIGS = {
     'dragtrack': 'DRAG TRACK',
     'nascar': 'NASCAR OVAL',
     'drivein': 'DRIVE-IN',
-    'underwater': 'UNDERWATER CITY',
     'dish': 'ARECIBO DISH'
 };
 const mapKeys = Object.keys(MAP_CONFIGS);
@@ -56,10 +54,92 @@ window.prevMapIndex = () => {
     selectMap(mapKeys[currentMapIdx]);
 };
 
+const MAP_THUMBNAILS = {
+    'ball': 'ballground.png',
+    'city': 'city.png',
+    'dev': 'dev.png',
+    'greyhills': 'greyhills.png',
+    'riverbanks': 'riverbanks.png',
+    'deport': 'deport.png',
+    'redballoons': 'redballons.png',
+    'area51': 'area55.png',
+    'antarctica': 'antarctica.png',
+    'canyon': 'canyon.png',
+    'prison': 'prison.png',
+    'trailerpark': 'trailerpark.png',
+    'castle': 'castle.png',
+    'airport': 'airport.png',
+    'raceden': 'raceden.png',
+    'dragtrack': 'dragstrip.png',
+    'nascar': 'oval.png',
+    'drivein': 'drivein.png',
+    'dish': 'dish.png'
+};
+
+const VISIBLE_THUMBS = 7;
+const THUMB_W = 120;
+const THUMB_H = 68;
+const THUMB_GAP = 4;
+
+function getWrappedIndices(center, count, total) {
+    const half = Math.floor(count / 2);
+    const indices = [];
+    for (let offset = -half; offset <= half; offset++) {
+        indices.push(((center + offset) % total + total) % total);
+    }
+    return indices;
+}
+
+function buildMapThumbList() {
+    const container = document.getElementById('map-thumb-list');
+    if (!container) return;
+    container.innerHTML = '';
+    container.style.height = `${VISIBLE_THUMBS * (THUMB_H + THUMB_GAP) - THUMB_GAP}px`;
+    for (let i = 0; i < VISIBLE_THUMBS; i++) {
+        const thumb = document.createElement('img');
+        thumb.className = 'map-thumb-item';
+        thumb.style.cssText = `width:${THUMB_W}px;height:${THUMB_H}px;object-fit:cover;border-radius:4px;cursor:pointer;border:2px solid transparent;transition:all 0.25s ease;display:block;`;
+        thumb.onclick = () => {
+            const idx = parseInt(thumb.dataset.realIndex);
+            if (!isNaN(idx)) { currentMapIdx = idx; selectMap(mapKeys[idx]); }
+        };
+        container.appendChild(thumb);
+    }
+}
+
+function updateMapThumbSelection() {
+    const container = document.getElementById('map-thumb-list');
+    if (!container) return;
+    const thumbs = container.querySelectorAll('.map-thumb-item');
+    const indices = getWrappedIndices(currentMapIdx, VISIBLE_THUMBS, mapKeys.length);
+    const half = Math.floor(VISIBLE_THUMBS / 2);
+    thumbs.forEach((thumb, slot) => {
+        const realIdx = indices[slot];
+        const key = mapKeys[realIdx];
+        thumb.src = `art/thumbnails/${MAP_THUMBNAILS[key] || 'ballground.png'}`;
+        thumb.dataset.realIndex = realIdx;
+        const dist = slot - half;
+        if (realIdx === currentMapIdx) {
+            thumb.style.borderColor = '#0af';
+            thumb.style.opacity = '1';
+            thumb.style.transform = 'scale(1.08)';
+            thumb.style.zIndex = '2';
+        } else {
+            thumb.style.borderColor = 'transparent';
+            thumb.style.opacity = Math.max(0.15, 1 - Math.abs(dist) * 0.25);
+            thumb.style.transform = 'scale(1)';
+            thumb.style.zIndex = '1';
+        }
+    });
+}
+
 window.selectMap = (key) => {
     window.currentMap = key;
     const display = document.getElementById('map-name-display');
     if (display) display.innerText = MAP_CONFIGS[key];
+    const thumb = document.getElementById('map-thumbnail');
+    if (thumb) thumb.src = `art/thumbnails/${MAP_THUMBNAILS[key] || 'ballground.png'}`;
+    updateMapThumbSelection();
 };
 
 window.customPlaylist = [];
@@ -180,7 +260,7 @@ window.showSubMenu = (id) => {
         if (target) target.classList.remove('hidden');
         document.getElementById('webgl-canvas').style.display = 'none';
         setLetterboxMainMenuState(false);
-        arcadePreview.active = false;
+        if (window.arcadePreview) window.arcadePreview.active = false;
         if (!multiplayerMenu) { multiplayerMenu = new MultiplayerMenu(); window.multiplayerMenu = multiplayerMenu; }
         multiplayerMenu.active = true;
         multiplayerMenu.setCar(window.currentCar);
@@ -216,14 +296,14 @@ window.showSubMenu = (id) => {
             target.classList.remove('hidden');
         }
         setLetterboxMainMenuState(id === 'main-menu');
-        arcadePreview.active = (id === 'vehicle-select-menu');
+        if (window.arcadePreview) window.arcadePreview.active = (id === 'vehicle-select-menu');
         if (id === 'settings-menu') setTimeout(() => { _settingsFocusIdx = 0; _settingsTabIdx = 0; openSettingsTab('controls'); }, 50);
         if (id === 'parkinglot-menu') {
             const el = document.getElementById('pl-car-name');
             if (el) el.textContent = CONFIG.CARS[window.currentCar]?.name || window.currentCar;
             renderParkingLotSongList();
         }
-        if (arcadePreview.active) setTimeout(() => { arcadePreview.updateSize(); selectCar(window.currentCar); }, 50);
+        if (window.arcadePreview && window.arcadePreview.active) setTimeout(() => { window.arcadePreview.updateSize(); selectCar(window.currentCar); }, 50);
         MenuController.selectedIndex = 0;
         _carSetupFocus = 0;
         updateVisibleSunStates();
@@ -231,12 +311,7 @@ window.showSubMenu = (id) => {
         setTimeout(() => MenuController.updateSelection(), 100);
     };
 
-    if (currentMenu && currentMenu.id !== id) {
-        currentMenu.classList.add('menu-flip-out');
-        setTimeout(switchMenu, 400);
-    } else {
-        switchMenu();
-    }
+    switchMenu();
 };
 
 const MenuController = {
@@ -461,14 +536,19 @@ function renderStoryStats(carType) {
         const pct = level / 5 * 100;
 
         const row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:0.75em;';
+        row.style.cssText = 'display:flex;align-items:center;width:100%;height:18px;background:rgba(255,255,255,0.06);border-radius:3px;position:relative;overflow:hidden;';
+        const segs = [1,2,3,4,5].map(i => {
+            const pos = (i / 5) * 100;
+            const filled = i <= level;
+            return `<div style="position:absolute;top:0;left:${pos}%;width:1px;height:100%;background:${filled ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.1)'};z-index:2;"></div>`;
+        }).join('');
         row.innerHTML = `
-            <div style="width:80px;flex-shrink:0;color:#aaa;">${def.name}</div>
-            <div style="flex:1;height:12px;background:rgba(255,255,255,0.08);border-radius:6px;position:relative;overflow:hidden;">
-                <div style="height:100%;width:${pct}%;background:${isMaxed ? '#ffd700' : '#0af'};border-radius:6px;transition:width 0.3s;"></div>
-                ${[20,40,60,80].map(p => `<div style="position:absolute;top:0;left:${p}%;width:2px;height:100%;background:${level * 20 >= p ? '#0f0' : 'rgba(255,255,255,0.15)'};"></div>`).join('')}
+            <div style="position:absolute;inset:0;width:${pct}%;background:${isMaxed ? '#ffd700' : '#0af'};border-radius:3px;transition:width 0.3s;opacity:0.5;"></div>
+            ${segs}
+            <div style="position:relative;z-index:3;display:flex;align-items:center;justify-content:space-between;width:100%;padding:0 6px;font-size:0.75em;">
+                <span style="color:#fff;">${def.name}</span>
+                <span style="color:${isMaxed ? '#ffd700' : '#fff'};">${displayFinal}</span>
             </div>
-            <div style="width:65px;text-align:right;color:${isMaxed ? '#ffd700' : '#fff'};">${displayFinal}</div>
         `;
         list.appendChild(row);
     }
@@ -495,10 +575,16 @@ window.selectStoryCar = async function(carType) {
 function setMiniLogoSVG(crewId) {
     const el = document.getElementById('story-mini-logo');
     if (!el) return;
+    const iconKey = {
+        beach: 'sun', moon: 'moon', rat: 'rat', hacker: 'hacker', cops: 'cops',
+        jam: 'jam', junk: 'junk', cute: 'cute', final: 'final', outcast: 'outcast',
+        wasted: 'wasted', demo: 'demo', void: 'void', kings: 'kings', fold: 'fold',
+        prostreet: 'prostreet', wcrew: 'wcrew', rich: 'rich', dev: 'dev'
+    }[crewId] || crewId;
     const svgs = {
-        sun: '<svg viewBox="0 0 100 100" width="36" height="36" style="filter:drop-shadow(0 0 4px currentColor);"><circle cx="50" cy="50" r="18" fill="currentColor"/><g stroke="currentColor" stroke-width="5" stroke-linecap="round"><line x1="50" y1="6" x2="50" y2="22"/><line x1="50" y1="78" x2="50" y2="94"/><line x1="6" y1="50" x2="22" y2="50"/><line x1="78" y1="50" x2="94" y2="50"/><line x1="14" y1="14" x2="26" y2="26"/><line x1="74" y1="74" x2="86" y2="86"/><line x1="86" y1="14" x2="74" y2="26"/><line x1="26" y1="74" x2="14" y2="86"/></g></svg>',
-        moon: '<svg viewBox="0 0 100 100" width="36" height="36" style="filter:drop-shadow(0 0 4px currentColor);"><path d="M60 15 A40 40 0 1 0 60 85 A30 30 0 1 1 60 15Z" fill="currentColor"/></svg>',
-        rat: '',
+        sun: '<img src="art/1%20logos/crew/1suncrewlogo.svg" width="100" height="100" alt="sun" style="object-fit:contain;">',
+        moon: '<img src="art/1%20logos/crew/2mooncrewlogo.svg" width="100" height="100" alt="moon" style="object-fit:contain;">',
+        rat: '<img src="art/1%20logos/crew/3ratcrewlogo.svg" width="100" height="100" alt="rat" style="object-fit:contain;">',
         hacker: '',
         cops: '<svg viewBox="0 0 100 100" width="36" height="36" style="filter:drop-shadow(0 0 4px currentColor);"><path d="M50 15 A35 35 0 1 0 50 85 A35 35 0 1 0 50 15Z" fill="currentColor"/><circle cx="50" cy="50" r="14" fill="#111"/><circle cx="50" cy="48" r="3" fill="currentColor"/><circle cx="45" cy="45" r="1.5" fill="#111"/><circle cx="55" cy="45" r="1.5" fill="#111"/></svg>',
         jam: '',
@@ -516,18 +602,14 @@ function setMiniLogoSVG(crewId) {
         rich: '',
         dev: ''
     };
-    el.innerHTML = svgs[crewId] || '';
+    el.innerHTML = svgs[iconKey] || '';
 }
 
 function disposeStoryPreview() {
     if (storyPreview) {
-        storyPreview.active = false;
-        if (storyPreview.renderer && storyPreview.renderer.domElement && storyPreview.renderer.domElement.parentNode) {
-            storyPreview.renderer.domElement.parentNode.removeChild(storyPreview.renderer.domElement);
-        }
+        storyPreview.dispose();
         storyPreview = null;
     }
-    // Also clear any leftover canvases in the preview container
     const container = document.getElementById('story-preview-container');
     if (container) {
         while (container.firstChild) container.removeChild(container.firstChild);
@@ -563,8 +645,8 @@ function updateCrewLogo(crewId) {
                 logo.style.borderColor = '#c0c0c0';
                 logo.style.boxShadow = '0 0 15px #c0c0c044';
             } else {
-                logo.style.color = '#0af';
-                logo.style.borderColor = '#0af';
+                logo.style.color = '#ff6b35';
+                logo.style.borderColor = '#ff6b35';
                 logo.style.boxShadow = 'none';
             }
         }
@@ -584,7 +666,7 @@ function updateCrewLogo(crewId) {
                 statusEl.style.color = '#c0c0c0';
             } else {
                 statusEl.textContent = `MISSION ${mp + 1} / 5`;
-                statusEl.style.color = '#0af';
+                statusEl.style.color = '#ffd700';
             }
         }
     });
@@ -593,7 +675,22 @@ function updateCrewLogo(crewId) {
 // Hook into the menu system - reset story menu when opened
 const origShowSubMenu = window.showSubMenu;
 window.showSubMenu = function(id) {
+    if (id === 'roadlite-menu') {
+        document.querySelectorAll('.menu-container').forEach(el => el.classList.add('hidden'));
+        const rl = document.getElementById('roadlite-menu');
+        if (rl) {
+            rl.style.display = 'flex';
+            updateRLCarName();
+        }
+        updateVisibleSunStates();
+        return;
+    }
+
     origShowSubMenu(id);
+
+    const rl = document.getElementById('roadlite-menu');
+    if (rl) rl.style.display = 'none';
+
     if (id === 'story-car-select-menu') {
         disposeStoryPreview();
         const initView = document.getElementById('story-initial-view');
@@ -636,6 +733,13 @@ window.showSubMenu = function(id) {
             }
         });
     }
+    if (id === 'arcade-menu') {
+        buildMapThumbList();
+        selectMap(window.currentMap || 'ball');
+    }
+    if (id === 'roadlite-menu') {
+        updateRLCarName();
+    }
 };
 
 // Crew prev/next arrows in expanded view
@@ -662,7 +766,6 @@ async function switchCrew(dir) {
     if (initView) initView.style.display = 'none';
     if (expandedView) expandedView.style.display = 'flex';
     if (rightPanel) rightPanel.style.display = 'none';
-    disposeStoryPreview();
     window._selectedCrew = nextCrew;
     setMiniLogoSVG(nextCrew);
 
@@ -680,7 +783,7 @@ async function switchCrew(dir) {
         const fullyMaxed = sd.isCrewFullyMaxed(nextCrew);
         if (fullyMaxed) { miniLogo.style.color = '#ffd700'; miniLogo.style.borderColor = '#ffd700'; miniLogo.style.boxShadow = '0 0 10px #ffd70044'; }
         else if (crewComplete) { miniLogo.style.color = '#c0c0c0'; miniLogo.style.borderColor = '#c0c0c0'; miniLogo.style.boxShadow = '0 0 8px #c0c0c044'; }
-        else { miniLogo.style.color = '#0af'; miniLogo.style.borderColor = '#0af'; miniLogo.style.boxShadow = 'none'; }
+        else { miniLogo.style.color = '#ff6b35'; miniLogo.style.borderColor = '#ff6b35'; miniLogo.style.boxShadow = 'none'; }
     }
     if (expCrewLabel) expCrewLabel.textContent = crew.name;
     if (expCrewStatus) {
@@ -689,7 +792,7 @@ async function switchCrew(dir) {
         if (fullyMaxed) expCrewStatus.textContent = 'ALL MAXED';
         else if (crewComplete) expCrewStatus.textContent = '✓ STORY COMPLETE';
         else expCrewStatus.textContent = `MISSION ${(cp.missionProgress || 0) + 1} / 5`;
-        expCrewStatus.style.color = fullyMaxed ? '#ffd700' : crewComplete ? '#c0c0c0' : '#0af';
+        expCrewStatus.style.color = fullyMaxed ? '#ffd700' : crewComplete ? '#c0c0c0' : '#ffd700';
     }
     if (ngSection) ngSection.style.display = crewComplete ? 'flex' : 'none';
 
@@ -746,7 +849,6 @@ document.addEventListener('click', async (e) => {
     initView.style.display = 'none';
     expandedView.style.display = 'flex';
     if (rightPanel) rightPanel.style.display = 'none';
-    disposeStoryPreview();
 
     const sd = await import('./StoryData.js');
     const crew = sd.CREWS[crewId];
@@ -771,8 +873,8 @@ document.addEventListener('click', async (e) => {
             miniLogo.style.borderColor = '#c0c0c0';
             miniLogo.style.boxShadow = '0 0 8px #c0c0c044';
         } else {
-            miniLogo.style.color = '#0af';
-            miniLogo.style.borderColor = '#0af';
+            miniLogo.style.color = '#ff6b35';
+            miniLogo.style.borderColor = '#ff6b35';
             miniLogo.style.boxShadow = 'none';
         }
     }
@@ -783,7 +885,7 @@ document.addEventListener('click', async (e) => {
         if (fullyMaxed) expCrewStatus.textContent = 'ALL MAXED';
         else if (crewComplete) expCrewStatus.textContent = '✓ STORY COMPLETE';
         else expCrewStatus.textContent = `MISSION ${(cp.missionProgress || 0) + 1} / 5`;
-        expCrewStatus.style.color = fullyMaxed ? '#ffd700' : crewComplete ? '#c0c0c0' : '#0af';
+        expCrewStatus.style.color = fullyMaxed ? '#ffd700' : crewComplete ? '#c0c0c0' : '#ffd700';
     }
 
     if (ngSection) ngSection.style.display = crewComplete ? 'flex' : 'none';
@@ -820,6 +922,111 @@ document.addEventListener('click', async (e) => {
 window.startArcade = () => bootGame();
 window._mpCarSelect = false;
 window._settingsFrom = null;
+
+const DEV_OBJECTS = {
+    story:     'STORY MODE',
+    arcade:    'START ARCADE',
+    multiplayer: 'MULTIPLAYER',
+    coopps:    'CO-OPS',
+    roadlite:  'ROADLITE',
+    parkinglot: 'PARKINGLOT',
+    settings:  'SETTINGS'
+};
+
+let _devTimeout = null;
+window.showDevObject = (id) => {
+    if (_devTimeout) clearTimeout(_devTimeout);
+    const text = DEV_OBJECTS[id] || DEV_OBJECTS.story;
+    const nextEl = document.getElementById('dev-object-next');
+    const curEl = document.getElementById('dev-object-current');
+    if (!nextEl || !curEl) return;
+    nextEl.textContent = text;
+    nextEl.style.opacity = '0';
+    curEl.style.opacity = '0';
+    _devTimeout = setTimeout(() => {
+        const tmp = curEl.textContent;
+        curEl.textContent = nextEl.textContent;
+        nextEl.textContent = tmp;
+        curEl.style.opacity = '1';
+        nextEl.style.opacity = '0';
+    }, 50);
+};
+
+window.toggleSavePanel = () => {
+    const overlay = document.getElementById('save-panel-overlay');
+    if (!overlay) return;
+    const shown = overlay.style.display === 'flex';
+    overlay.style.display = shown ? 'none' : 'flex';
+    if (!shown) buildSavePanelContent();
+};
+
+function buildSavePanelContent() {
+    const container = document.getElementById('save-panel-content');
+    if (!container) return;
+    import('./StoryData.js').then(sd => {
+        const save = sd.loadSave();
+        const crews = save.crews || {};
+        let crewsComplete = 0, totalCars = 0, totalUpgradeLvls = 0, totalScrap = 0, prestigeSum = 0;
+        for (const [id, c] of Object.entries(sd.CREWS)) {
+            const cp = crews[id] || {};
+            if (cp.missionProgress >= 5) crewsComplete++;
+            for (const car of c.cars) {
+                const p = save[car] || {};
+                totalCars++;
+                if (p.upgrades) totalUpgradeLvls += Object.values(p.upgrades).reduce((a, b) => a + b, 0);
+                prestigeSum += p.prestige || 0;
+            }
+            totalScrap += cp.scrap || 0;
+        }
+        const credits = parseInt(localStorage.getItem('roadknight_credits') || '0');
+        const scheme = localStorage.getItem('roadknight_control_scheme') || 'default';
+        const allCars = Object.keys(save).filter(k => k !== 'crews');
+        const playedCars = allCars.filter(k => save[k] && (save[k].prestige || save[k].upgrades));
+
+        let html = `<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div style="background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;">
+                <div style="color:#888;font-size:0.8em;">CREWS COMPLETE</div>
+                <div style="color:#0f0;font-size:1.6em;font-weight:bold;">${crewsComplete} / ${Object.keys(sd.CREWS).length}</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;">
+                <div style="color:#888;font-size:0.8em;">CARS PLAYED</div>
+                <div style="color:#0af;font-size:1.6em;font-weight:bold;">${playedCars.length}</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;">
+                <div style="color:#888;font-size:0.8em;">UPGRADE LEVELS</div>
+                <div style="color:#ff0;font-size:1.6em;font-weight:bold;">${totalUpgradeLvls}</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;">
+                <div style="color:#888;font-size:0.8em;">TOTAL SCRAP</div>
+                <div style="color:#f0f;font-size:1.6em;font-weight:bold;">${totalScrap}</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;">
+                <div style="color:#888;font-size:0.8em;">PRESTIGE TOTAL</div>
+                <div style="color:#ff8800;font-size:1.6em;font-weight:bold;">${prestigeSum}</div>
+            </div>
+            <div style="background:rgba(255,255,255,0.04);padding:12px;border-radius:8px;">
+                <div style="color:#888;font-size:0.8em;">CREDITS</div>
+                <div style="color:#0ff;font-size:1.6em;font-weight:bold;">${credits}</div>
+            </div>
+        </div>
+        <div style="margin-top:15px;padding:12px;background:rgba(255,255,255,0.04);border-radius:8px;">
+            <div style="color:#888;font-size:0.8em;">CONTROL SCHEME</div>
+            <div style="color:#fff;">${scheme.toUpperCase()}</div>
+        </div>
+        <div style="margin-top:10px;padding:12px;background:rgba(255,255,255,0.04);border-radius:8px;max-height:200px;overflow-y:auto;">
+            <div style="color:#888;font-size:0.8em;margin-bottom:6px;">SAVED VEHICLES</div>
+            ${playedCars.length === 0 ? '<div style="color:#555;">No vehicles saved yet.</div>' :
+            playedCars.map(k => {
+                const d = save[k];
+                const p = d.prestige || 0;
+                const u = d.upgrades ? Object.values(d.upgrades).reduce((a, b) => a + b, 0) : 0;
+                const name = sd.CONFIG?.CARS?.[k]?.name || k;
+                return `<div style="color:#aaa;font-size:0.85em;">${p > 0 ? '★ ' : ''}${name} — ${u} upgrades, prestige ${p}</div>`;
+            }).join('')}
+        </div>`;
+        container.innerHTML = html;
+    });
+}
 
 window.settingsBack = () => {
     const prev = window._settingsFrom;
@@ -864,6 +1071,9 @@ window.returnToMenu = () => {
         if (window._net.role === 'host') window._net.closeLobby();
         else window._net.leaveLobby();
     }
+    if (!window.arcadePreview || !window.arcadePreview.renderer) {
+        window.arcadePreview = new ArcadePreview();
+    }
     const goEl = document.getElementById('game-over-overlay'); if (goEl) goEl.style.display = 'none';
     document.getElementById('game-layer').style.display = 'none';
     document.getElementById('menu-layer').style.display = 'block';
@@ -871,6 +1081,10 @@ window.returnToMenu = () => {
     document.getElementById('webgl-canvas').style.display = 'block';
     if (menuGL) menuGL.start();
     if (window.menuMusic) window.menuMusic.resumeFromMatch();
+    const levelUpOverlay = document.getElementById('level-up-overlay');
+    if (levelUpOverlay) levelUpOverlay.style.display = 'none';
+    const roadliteHud = document.getElementById('roadlite-hud');
+    if (roadliteHud) roadliteHud.style.display = 'none';
     showSubMenu('main-menu');
     updateVisibleSunStates();
 };
@@ -887,6 +1101,8 @@ window.cycleBulletType = (dir) => {
 };
 window.bootGame = async function() {
     if (isBooting) return; isBooting = true;
+    disposeStoryPreview();
+    if (window.arcadePreview) { window.arcadePreview.dispose(); window.arcadePreview = null; }
     hideLetterboxImmediately();
     if (menuGL) menuGL.stop();
     if (window.game) { window.game.dispose(); window.game = null; }
@@ -894,6 +1110,8 @@ window.bootGame = async function() {
     document.getElementById('menu-layer').style.display = 'none';
     document.getElementById('webgl-canvas').style.display = 'none';
     document.getElementById('game-layer').style.display = 'block';
+    const hudEl = document.getElementById('roadlite-hud');
+    if (hudEl) hudEl.style.display = 'none';
     updateVisibleSunStates();
     const { ArcadeTestGame } = await import('./ArcadeTestGame.js');
     window.game = new ArcadeTestGame();
@@ -914,6 +1132,8 @@ window.startNewGamePlus = async function() {
 
 window.bootStoryGame = async function(carType, missionIndex, scrap, difficulty) {
     if (isBooting) return; isBooting = true;
+    disposeStoryPreview();
+    if (window.arcadePreview) { window.arcadePreview.dispose(); window.arcadePreview = null; }
     hideLetterboxImmediately();
     if (menuGL) menuGL.stop();
     if (window.game) { window.game.dispose(); window.game = null; }
@@ -949,6 +1169,43 @@ window.bootStoryGame = async function(carType, missionIndex, scrap, difficulty) 
     } catch (e) {
         console.error('bootStoryGame error:', e);
         alert('Failed to start story mode: ' + e.message);
+    }
+    setTimeout(() => { isBooting = false; }, 500);
+};
+
+window.updateRLCarName = () => {
+    const el = document.getElementById('rl-car-name');
+    if (el) {
+        const name = CONFIG.CARS[window.currentCar]?.name || window.currentCar;
+        el.textContent = name.toUpperCase();
+    }
+};
+
+window.bootRoadliteGame = async function() {
+    if (isBooting) return; isBooting = true;
+    disposeStoryPreview();
+    if (window.arcadePreview) { window.arcadePreview.dispose(); window.arcadePreview = null; }
+    hideLetterboxImmediately();
+    if (menuGL) menuGL.stop();
+    if (window.game) { window.game.dispose(); window.game = null; }
+    if (window.menuMusic) window.menuMusic.pause();
+    document.getElementById('menu-layer').style.display = 'none';
+    document.getElementById('webgl-canvas').style.display = 'none';
+    document.getElementById('game-layer').style.display = 'block';
+    const rlMenu = document.getElementById('roadlite-menu');
+    if (rlMenu) rlMenu.style.display = 'none';
+    const lvlUp = document.getElementById('level-up-overlay');
+    if (lvlUp) lvlUp.style.display = 'none';
+    const hud = document.getElementById('roadlite-hud');
+    if (hud) hud.style.display = 'block';
+    updateVisibleSunStates();
+    try {
+        const { RoadliteGame } = await import('./RoadliteGame.js');
+        window.game = new RoadliteGame(window.currentCar || '35-impala');
+        window.applySharedAudioSettingsToGame();
+        syncSharedAudioUI();
+    } catch (e) {
+        console.error('bootRoadliteGame error:', e);
     }
     setTimeout(() => { isBooting = false; }, 500);
 };
@@ -1000,6 +1257,11 @@ window.addEventListener('keydown', (e) => {
     if (plMenu) {
         if (['ArrowUp', 'KeyW'].includes(e.code)) { e.preventDefault(); window._plHandleNav(-1); return; }
         if (['ArrowDown', 'KeyS'].includes(e.code)) { e.preventDefault(); window._plHandleNav(1); return; }
+    }
+    const arcadeMenu = document.querySelector('#arcade-menu:not(.hidden)');
+    if (arcadeMenu) {
+        if (['ArrowUp', 'KeyW'].includes(e.code)) { e.preventDefault(); prevMapIndex(); return; }
+        if (['ArrowDown', 'KeyS'].includes(e.code)) { e.preventDefault(); nextMapIndex(); return; }
     }
     if (['ArrowUp', 'KeyW'].includes(e.code)) MenuController.moveSelection(-1);
     else if (['ArrowDown', 'KeyS'].includes(e.code)) MenuController.moveSelection(1);
@@ -1283,6 +1545,8 @@ window.startParkingLot = async () => {
 
     if (isBooting) return; isBooting = true;
     window._plCustomPreviewActive = false;
+    disposeStoryPreview();
+    if (window.arcadePreview) { window.arcadePreview.dispose(); window.arcadePreview = null; }
     hideLetterboxImmediately();
     if (menuGL) menuGL.stop();
     if (window.game) { window.game.dispose(); window.game = null; }
@@ -1371,6 +1635,17 @@ window.addEventListener('keydown', tryUnlockMenuMusic);
 window.addEventListener('load', () => {
     menuGL = new MenuGL();
     window.menuGL = menuGL;
+
+    let resizeTimeout;
+    window.addEventListener('resize', () => {
+        clearTimeout(resizeTimeout);
+        resizeTimeout = setTimeout(() => {
+            if (document.querySelector('#arcade-menu:not(.hidden)')) {
+                buildMapThumbList();
+                updateMapThumbSelection();
+            }
+        }, 100);
+    });
 
     // Real HTML logo overlay: clipped at horizon so water covers it
     const origTitle = document.querySelector('.main-menu-title');

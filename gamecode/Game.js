@@ -88,6 +88,10 @@ export class Game {
         this.aiControllers = [];
         this.arenaHalfSize = 400;
 
+        this.lastHitCar = null;
+        this.lastHitTime = 0;
+        this.hitmarkerFlash = 0;
+
         this.missionIndex = storyConfig.missionIndex;
         this.missionComplete = false;
         this.showingShop = false;
@@ -406,16 +410,19 @@ export class Game {
         this._l3Prev = gp ? !!gp.buttons[10]?.pressed : false;
 
         let throttle = (keys['KeyW']||keys['ArrowUp']?1:0)-(keys['KeyS']||keys['ArrowDown']?1:0);
-        let airPitch = throttle; if (gp && Math.abs(gp.axes[1]) > 0.1) airPitch = -gp.axes[1];
+        let airPitch = throttle;
+        let spinDir = 0;
+        if (gp && Math.abs(gp.axes[1]) > 0.1) airPitch = -gp.axes[1];
+        if (gp && Math.abs(gp.axes[2]) > 0.1) spinDir = -gp.axes[2];
 
         if (!isGrounded && !this.vehicle.hoverMode && leanHeld && !this.vehicle.isAirFlipping) {
-            if (Math.abs(steerDir) > 0.5 && this.energy >= 20) {
-                this.energy -= 20;
-                this.vehicle.performAirFlip(Math.sign(steerDir), 'roll');
-            }
-            else if (Math.abs(airPitch) > 0.5 && this.energy >= 40) {
-                this.energy -= 40;
-                this.vehicle.performAirFlip(Math.sign(airPitch), 'pitch');
+            const flipX = Math.abs(steerDir) > 0.5 ? Math.sign(steerDir) : 0;
+            const flipY = Math.abs(airPitch) > 0.5 ? Math.sign(airPitch) : 0;
+            const flipZ = Math.abs(spinDir) > 0.3 ? spinDir : 0;
+            const energyCost = (flipX !== 0 ? 20 : 0) + (flipY !== 0 ? 20 : 0) + (flipZ !== 0 ? 10 : 0);
+            if ((flipX !== 0 || flipY !== 0 || flipZ !== 0) && this.energy >= energyCost) {
+                this.energy -= energyCost;
+                this.vehicle.performAirFlip(flipX, flipY, flipZ);
             }
         }
 
@@ -1016,6 +1023,7 @@ export class Game {
                 localP.applyQuaternion(car.carMesh.quaternion.clone().invert());
                 if (Math.abs(localP.x) < 1.1 && Math.abs(localP.y) < 1.2 && Math.abs(localP.z) < 3.6) {
                     car.applyDamage(p.damage || 5);
+                    if (this.vehicle && p.source === this.vehicle) { this.lastHitCar = car; this.lastHitTime = performance.now(); this.hitmarkerFlash = 0.12; }
                     hit = true;
                     break;
                 }
@@ -1049,6 +1057,7 @@ export class Game {
                 const dmg = m.isSuper ? 60 : 30;
                 const dmgScale = 1 - (dist / 10);
                 car.applyDamage(dmg * dmgScale);
+                if (this.vehicle && m.source === this.vehicle) { this.lastHitCar = car; this.lastHitTime = performance.now(); this.hitmarkerFlash = 0.12; }
             }
         });
         this.scene.remove(m.mesh);
@@ -1127,6 +1136,60 @@ export class Game {
         if (livesEl) livesEl.innerText = `LIVES: ${this.lives}`;
         const aliveEl = document.getElementById('enemy-count');
         if (aliveEl) aliveEl.innerText = `ENEMIES: ${this.aiControllers.filter(a => !a.vehicle.isDead).length} | M:${this.missionIndex} P:${this.prestige} S:${this.enemiesSpawned?'Y':'N'}`;
+        this.updateEnemyHealthUI();
+        this.drawHitmarker();
+    }
+
+    updateEnemyHealthUI() {
+        const ui = document.getElementById('enemy-health-ui');
+        if (!ui) return;
+        if (!this.lastHitCar || this.lastHitCar.isDead || (performance.now() - this.lastHitTime) > 5000) {
+            ui.style.display = 'none';
+            return;
+        }
+        ui.style.display = 'block';
+        const nameEl = document.getElementById('enemy-health-name');
+        const barEl = document.getElementById('enemy-health-bar');
+        if (nameEl) nameEl.textContent = (this.lastHitCar.carConfig && this.lastHitCar.carConfig.name) || 'ENEMY';
+        if (barEl) barEl.style.width = `${Math.max(0, (this.lastHitCar.health / this.lastHitCar.healthMax) * 100)}%`;
+    }
+
+    drawHitmarker() {
+        if (this.hitmarkerFlash > 0) {
+            this.hitmarkerFlash -= 1 / 60;
+            if (this.hitmarkerFlash <= 0) {
+                const c = document.getElementById('hitmarker-canvas');
+                if (c) c.style.display = 'none';
+                return;
+            }
+        }
+        const canvas = document.getElementById('hitmarker-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (this.hitmarkerFlash > 0) {
+            canvas.style.display = 'block';
+            canvas.width = canvas.clientWidth || window.innerWidth;
+            canvas.height = canvas.clientHeight || window.innerHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const t = this.hitmarkerFlash / 0.12;
+            const size = 10 + (1 - t) * 10;
+            const alpha = Math.min(1, t * 4);
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = 'rgba(255,255,255,0.6)';
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.moveTo(cx - size, cy - size);
+            ctx.lineTo(cx + size, cy + size);
+            ctx.moveTo(cx + size, cy - size);
+            ctx.lineTo(cx - size, cy + size);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        } else {
+            if (canvas.style.display !== 'none') canvas.style.display = 'none';
+        }
     }
 
     dispose() {

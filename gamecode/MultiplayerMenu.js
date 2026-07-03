@@ -212,6 +212,13 @@ export class MultiplayerMenu {
         this._onTouchMove = null;
         this._onTouchEnd = null;
         this._resizeRef = null;
+        if (this.renderer) {
+            this.renderer.dispose();
+            if (this.renderer.domElement && this.renderer.domElement.parentNode) {
+                this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+            }
+            this.renderer = null;
+        }
     }
 
     resize() {

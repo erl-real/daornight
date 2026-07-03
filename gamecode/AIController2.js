@@ -304,7 +304,7 @@ export class AIController2 {
         if (!isGrounded && !inHover && now - this.lastAirFlipTime > 2000) {
             if (this.vehicle.energy >= 20 && Math.random() < 0.02) {
                 const flipDir = this.controls.steer > 0 ? 1 : -1;
-                this.vehicle.performAirFlip(flipDir, 'roll');
+                this.vehicle.performAirFlip(flipDir, 0, 0);
                 this.vehicle.energy = Math.max(0, this.vehicle.energy - 20);
                 this.lastAirFlipTime = now;
             }

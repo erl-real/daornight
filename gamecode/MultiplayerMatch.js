@@ -308,12 +308,20 @@ export class MultiplayerMatch {
 
     let throttle = (keys['KeyW'] || keys['ArrowUp'] ? 1 : 0) - (keys['KeyS'] || keys['ArrowDown'] ? 1 : 0);
     let airPitch = throttle;
+    let spinDir = 0;
     if (gp && Math.abs(gp.axes[1]) > 0.1) airPitch = -gp.axes[1];
+    if (gp && Math.abs(gp.axes[2]) > 0.1) spinDir = -gp.axes[2];
 
     // Air flips
     if (!isGrounded && !vehicle.hoverMode && leanHeld && !vehicle.isAirFlipping) {
-      if (Math.abs(steerDir) > 0.5 && this.energy >= 20) { this.energy -= 20; vehicle.performAirFlip(Math.sign(steerDir), 'roll'); }
-      else if (Math.abs(airPitch) > 0.5 && this.energy >= 40) { this.energy -= 40; vehicle.performAirFlip(Math.sign(airPitch), 'pitch'); }
+      const flipX = Math.abs(steerDir) > 0.5 ? Math.sign(steerDir) : 0;
+      const flipY = Math.abs(airPitch) > 0.5 ? Math.sign(airPitch) : 0;
+      const flipZ = Math.abs(spinDir) > 0.3 ? spinDir : 0;
+      const energyCost = (flipX !== 0 ? 20 : 0) + (flipY !== 0 ? 20 : 0) + (flipZ !== 0 ? 10 : 0);
+      if ((flipX !== 0 || flipY !== 0 || flipZ !== 0) && this.energy >= energyCost) {
+        this.energy -= energyCost;
+        vehicle.performAirFlip(flipX, flipY, flipZ);
+      }
     }
 
     // Lean state management

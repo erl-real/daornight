@@ -177,15 +177,6 @@ const DriveInMap = {
     drivein: true
 };
 
-const UnderwaterMap = {
-    name: "Underwater City",
-    grass: true,
-    groundColor: 0x004488,
-    skybox: 'art/skys/SBS - Cloudy Skyboxes - Panorama/Panorama/Panorama_Sky_11-512x512.png',
-    pickups: DefaultPickups,
-    underwater: true
-};
-
 const DishMap = {
     name: "Arecibo Dish",
     grass: true,
@@ -232,7 +223,6 @@ export class ArcadeTestGame {
         else if (mapKey === 'dragtrack') this.mapConfig = DragTrackMap;
         else if (mapKey === 'nascar') this.mapConfig = NascarMap;
         else if (mapKey === 'drivein') this.mapConfig = DriveInMap;
-        else if (mapKey === 'underwater') this.mapConfig = UnderwaterMap;
         else if (mapKey === 'dish') this.mapConfig = DishMap;
         else this.mapConfig = BallMap;
 
@@ -319,6 +309,10 @@ export class ArcadeTestGame {
         this.kills = 0;
         this.startTime = Date.now();
         this.matchEnded = false;
+
+        this.lastHitCar = null;
+        this.lastHitTime = 0;
+        this.hitmarkerFlash = 0;
 
         // Shared Pool Resources
         this.poolGeo = new THREE.CircleGeometry(4, 16);
@@ -678,18 +672,6 @@ export class ArcadeTestGame {
             this.addBuilding(0, 50, -350, 180, 100, 15, 0x111111);
             const screen = new THREE.Mesh(new THREE.PlaneGeometry(160, 80), new THREE.MeshBasicMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.4 }));
             screen.position.set(0, 55, -342); this.scene.add(screen);
-        }
-
-        // Underwater City Logic
-        if (config.underwater) {
-            const domeGeo = new THREE.SphereGeometry(450, 32, 16, 0, Math.PI*2, 0, Math.PI/2);
-            const domeMat = new THREE.MeshPhongMaterial({ color: 0x00aaff, transparent: true, opacity: 0.15, side: THREE.DoubleSide });
-            const dome = new THREE.Mesh(domeGeo, domeMat); this.scene.add(dome);
-            for (let i = 0; i < 12; i++) {
-                const angle = (i / 12) * Math.PI * 2;
-                const light = new THREE.PointLight(new THREE.Color().setHSL(i/12, 1, 0.5), 20, 150);
-                light.position.set(Math.cos(angle)*420, 15, Math.sin(angle)*420); this.scene.add(light);
-            }
         }
 
         // Arecibo Dish Logic
@@ -1065,6 +1047,7 @@ export class ArcadeTestGame {
                     Math.abs(localP.y) < 1.2 && 
                     Math.abs(localP.z) < 3.6) { 
                     car.applyDamage(p.damage || 5); 
+                    if (this.vehicle && p.source === this.vehicle) { this.lastHitCar = car; this.lastHitTime = performance.now(); this.hitmarkerFlash = 0.12; }
                     hit = true; break;
                 }
             }
@@ -1093,6 +1076,7 @@ export class ArcadeTestGame {
                 localP.applyQuaternion(this._q2.copy(car.carMesh.quaternion).invert());
                 if (Math.abs(localP.x) < 1.1 && Math.abs(localP.y) < 1.2 && Math.abs(localP.z) < 3.6) {
                     car.applyDamage(p.damage || 20);
+                    if (this.vehicle && p.owner === this.vehicle) { this.lastHitCar = car; this.lastHitTime = performance.now(); this.hitmarkerFlash = 0.12; }
                     hit = true; break;
                 }
             }
@@ -1160,6 +1144,9 @@ export class ArcadeTestGame {
                 else if (b.type === 'cryo') car.slowTimer = 4.0;
                 else if (b.type === 'toxic') { car.applyDamage((1 - dist / 8) * 45); car.toxicTimer = 5.0; }
                 else if (b.type === 'oil') car.oilTimer = 6.0;
+                if (this.vehicle && car !== this.vehicle && !car.isDead && (b.type === 'explosive' || b.type === 'toxic')) {
+                    this.lastHitCar = car; this.lastHitTime = performance.now(); this.hitmarkerFlash = 0.12;
+                }
             }
         });
     }
@@ -1184,6 +1171,7 @@ export class ArcadeTestGame {
                 car.chassisBody.applyImpulse(dir.scale(force * ratio), new CANNON.Vec3());
                 car.applyDamage(damageBase * ratio);
                 car.fireTimer = 2.0;
+                if (this.vehicle && m.source === this.vehicle && car !== this.vehicle) { this.lastHitCar = car; this.lastHitTime = performance.now(); this.hitmarkerFlash = 0.12; }
 
                 if (m.isSuper) {
                     car.chassisBody.velocity.y += 25; // LAUNCH EFFECT
@@ -1268,16 +1256,19 @@ export class ArcadeTestGame {
         this._l3Prev = gp ? !!gp.buttons[10]?.pressed : false;
         
         let throttle = (keys['KeyW']||keys['ArrowUp']?1:0)-(keys['KeyS']||keys['ArrowDown']?1:0);
-        let airPitch = throttle; if (gp && Math.abs(gp.axes[1]) > 0.1) airPitch = -gp.axes[1];
-        
+        let airPitch = throttle;
+        let spinDir = 0;
+        if (gp && Math.abs(gp.axes[1]) > 0.1) airPitch = -gp.axes[1];
+        if (gp && Math.abs(gp.axes[2]) > 0.1) spinDir = -gp.axes[2];
+
         if (!isGrounded && !this.vehicle.hoverMode && leanHeld && !this.vehicle.isAirFlipping) {
-            if (Math.abs(steerDir) > 0.5 && this.energy >= 20) { 
-                this.energy -= 20;
-                this.vehicle.performAirFlip(Math.sign(steerDir), 'roll'); 
-            }
-            else if (Math.abs(airPitch) > 0.5 && this.energy >= 40) { 
-                this.energy -= 40;
-                this.vehicle.performAirFlip(Math.sign(airPitch), 'pitch'); 
+            const flipX = Math.abs(steerDir) > 0.5 ? Math.sign(steerDir) : 0;
+            const flipY = Math.abs(airPitch) > 0.5 ? Math.sign(airPitch) : 0;
+            const flipZ = Math.abs(spinDir) > 0.3 ? spinDir : 0;
+            const energyCost = (flipX !== 0 ? 20 : 0) + (flipY !== 0 ? 20 : 0) + (flipZ !== 0 ? 10 : 0);
+            if ((flipX !== 0 || flipY !== 0 || flipZ !== 0) && this.energy >= energyCost) {
+                this.energy -= energyCost;
+                this.vehicle.performAirFlip(flipX, flipY, flipZ);
             }
         }
         
@@ -1434,5 +1425,59 @@ export class ArcadeTestGame {
         if (this.leanCooldown > 0 && !this.isLeaningState) status += ` (COOLDOWN: ${this.leanCooldown.toFixed(1)}s)`;
         const hoverStatusEl = document.getElementById('hover-status');
         if (hoverStatusEl) hoverStatusEl.innerText = status;
+        this.updateEnemyHealthUI();
+        this.drawHitmarker();
+    }
+
+    updateEnemyHealthUI() {
+        const ui = document.getElementById('enemy-health-ui');
+        if (!ui) return;
+        if (!this.lastHitCar || this.lastHitCar.isDead || (performance.now() - this.lastHitTime) > 5000) {
+            ui.style.display = 'none';
+            return;
+        }
+        ui.style.display = 'block';
+        const nameEl = document.getElementById('enemy-health-name');
+        const barEl = document.getElementById('enemy-health-bar');
+        if (nameEl) nameEl.textContent = (this.lastHitCar.carConfig && this.lastHitCar.carConfig.name) || 'ENEMY';
+        if (barEl) barEl.style.width = `${Math.max(0, this.lastHitCar.health)}%`;
+    }
+
+    drawHitmarker() {
+        if (this.hitmarkerFlash > 0) {
+            this.hitmarkerFlash -= 1 / 60;
+            if (this.hitmarkerFlash <= 0) {
+                const c = document.getElementById('hitmarker-canvas');
+                if (c) c.style.display = 'none';
+                return;
+            }
+        }
+        const canvas = document.getElementById('hitmarker-canvas');
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (this.hitmarkerFlash > 0) {
+            canvas.style.display = 'block';
+            canvas.width = canvas.clientWidth || window.innerWidth;
+            canvas.height = canvas.clientHeight || window.innerHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const t = this.hitmarkerFlash / 0.12;
+            const size = 10 + (1 - t) * 10;
+            const alpha = Math.min(1, t * 4);
+            ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
+            ctx.lineWidth = 2.5;
+            ctx.shadowColor = 'rgba(255,255,255,0.6)';
+            ctx.shadowBlur = 4;
+            ctx.beginPath();
+            ctx.moveTo(cx - size, cy - size);
+            ctx.lineTo(cx + size, cy + size);
+            ctx.moveTo(cx + size, cy - size);
+            ctx.lineTo(cx - size, cy + size);
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+        } else {
+            if (canvas.style.display !== 'none') canvas.style.display = 'none';
+        }
     }
 }
