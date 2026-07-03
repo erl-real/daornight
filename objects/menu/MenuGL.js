@@ -49,6 +49,22 @@ export class MenuGL {
 
     start() {
         if (this.running) return;
+        if (!this.gl) {
+            this.canvas = document.getElementById('webgl-canvas');
+            if (this.canvas) {
+                this.gl = this.canvas.getContext('webgl', {
+                    alpha: false, antialias: false, depth: false, stencil: false,
+                    preserveDrawingBuffer: false, powerPreference: 'high-performance'
+                });
+                if (this.gl) {
+                    this.initShaders();
+                    this.initBuffers();
+                    this.initUniforms();
+                    this.resize();
+                }
+            }
+        }
+        if (!this.gl) return;
         this.running = true;
         this.lastNow = performance.now();
         this.animate();

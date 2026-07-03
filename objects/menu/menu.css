@@ -34,12 +34,6 @@ section {
   height: 100vh;
 }
 
-/* Custom scrollbar */
-#menu-layer::-webkit-scrollbar {
-  width: 0px;
-  background: transparent;
-}
-
 .menu-container {
   padding-left: 5%;
   display: flex;
@@ -73,7 +67,8 @@ section h1 {
   cursor: pointer;
   transition: all 0.2s;
   width: fit-content;
-  color: #000; /* NON SELECTED IS BLACK */
+  color: #fff;
+  text-shadow: -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000;
   text-transform: uppercase;
 }
 
